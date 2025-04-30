@@ -1,0 +1,17 @@
+[package]
+name = "fidget-py"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "fidgetpy"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.24.1", features = ["extension-module"] }
+fidget = { path = "../fidget/fidget", default-features = false, features = ["jit"] } # Enable jit feature
+numpy = "0.24.0"
+ndarray = "0.16"
+nalgebra = "0.33"
+
