@@ -32,28 +32,42 @@ def evaluate(expr, points=SAMPLE_POINTS_NP, variables=None):
         return fp.eval(expr, points)  # Rely on default variables=[x,y,z]
 
 def test_mirror():
-    """Test mirroring functions."""
-    # mirror_x
+    """Test mirroring function."""
+    # Mirror X
     expr_abs_x = fpm.abs(X)  # |x|
-    mirrored_expr = fpm.mirror_x(X)  # Should behave like |x|
-    
-    np.testing.assert_allclose(evaluate(expr_abs_x), evaluate(mirrored_expr))
-    
-    # Also test as a method
-    mirrored_expr_method = X.mirror_x()
-    np.testing.assert_allclose(evaluate(expr_abs_x), evaluate(mirrored_expr_method))
-    
-    # Test mirror_y
+    mirrored_expr_x = fpm.mirror(X, mx=True)
+    mirrored_expr_x_m = X.mirror(mx=True)
+    np.testing.assert_allclose(evaluate(expr_abs_x), evaluate(mirrored_expr_x))
+    np.testing.assert_allclose(evaluate(expr_abs_x), evaluate(mirrored_expr_x_m))
+
+    # Mirror Y
     expr_abs_y = fpm.abs(Y)  # |y|
-    mirrored_expr_y = fpm.mirror_y(Y)  # Should behave like |y|
-    
+    mirrored_expr_y = fpm.mirror(Y, my=True)
+    mirrored_expr_y_m = Y.mirror(my=True)
     np.testing.assert_allclose(evaluate(expr_abs_y), evaluate(mirrored_expr_y))
-    
-    # Test mirror_z
+    np.testing.assert_allclose(evaluate(expr_abs_y), evaluate(mirrored_expr_y_m))
+
+    # Mirror Z
     expr_abs_z = fpm.abs(Z)  # |z|
-    mirrored_expr_z = fpm.mirror_z(Z)  # Should behave like |z|
-    
+    mirrored_expr_z = fpm.mirror(Z, mz=True)
+    mirrored_expr_z_m = Z.mirror(mz=True)
     np.testing.assert_allclose(evaluate(expr_abs_z), evaluate(mirrored_expr_z))
+    np.testing.assert_allclose(evaluate(expr_abs_z), evaluate(mirrored_expr_z_m))
+
+    # Mirror XY
+    expr_abs_xy = fpm.abs(X) + fpm.abs(Y) # |x| + |y|
+    mirrored_expr_xy = fpm.mirror(X + Y, mx=True, my=True)
+    mirrored_expr_xy_m = (X + Y).mirror(mx=True, my=True)
+    # Evaluate at points where x or y might be negative
+    points_xy = np.array([
+        [1.0, 1.0, 0.0],
+        [-1.0, 1.0, 0.0],
+        [1.0, -1.0, 0.0],
+        [-1.0, -1.0, 0.0],
+        [0.5, -0.5, 0.0],
+    ], dtype=np.float32)
+    np.testing.assert_allclose(evaluate(expr_abs_xy, points_xy), evaluate(mirrored_expr_xy, points_xy))
+    np.testing.assert_allclose(evaluate(expr_abs_xy, points_xy), evaluate(mirrored_expr_xy_m, points_xy))
 
 def test_repeat():
     """Test repeat function."""
@@ -69,7 +83,7 @@ def test_repeat():
     ], dtype=np.float32)
     
     # Test repeat just in x dimension
-    expr_repeat_x = fpm.repeat_x(X, 2.0)
+    expr_repeat_x = fpm.repeat(X, 2.0, 0, 0)
     
     # Calculate expected values based on our implementation
     # x - period * floor(x / period + 0.5)
@@ -82,7 +96,7 @@ def test_repeat():
     result_repeat_x = evaluate(expr_repeat_x, repeat_points)
     np.testing.assert_allclose(result_repeat_x, expected_x, atol=1e-6)
     # Test method call
-    expr_repeat_x_method = X.repeat_x(2.0)
+    expr_repeat_x_method = X.repeat(2.0, 0, 0)
     result_repeat_x_method = evaluate(expr_repeat_x_method, repeat_points)
     np.testing.assert_allclose(result_repeat_x_method, expected_x, atol=1e-6)
 
@@ -96,7 +110,7 @@ def test_repeat():
         [0.0, -0.5, 0.0]
     ], dtype=np.float32)
 
-    expr_repeat_y = fpm.repeat_y(Y, 2.0)
+    expr_repeat_y = fpm.repeat(Y, 0, 2.0, 0)
 
     # Calculate expected values
     expected_y = np.zeros(len(repeat_points_y))
@@ -108,7 +122,7 @@ def test_repeat():
     result_repeat_y = evaluate(expr_repeat_y, repeat_points_y)
     np.testing.assert_allclose(result_repeat_y, expected_y, atol=1e-6)
     # Test method call
-    expr_repeat_y_method = Y.repeat_y(2.0)
+    expr_repeat_y_method = Y.repeat(0, 2.0, 0)
     result_repeat_y_method = evaluate(expr_repeat_y_method, repeat_points_y)
     np.testing.assert_allclose(result_repeat_y_method, expected_y, atol=1e-6)
 
@@ -122,7 +136,7 @@ def test_repeat():
         [0.0, 0.0, -0.5]
     ], dtype=np.float32)
 
-    expr_repeat_z = fpm.repeat_z(Z, 2.0)
+    expr_repeat_z = fpm.repeat(Z, 0, 0, 2.0)
 
     # Calculate expected values
     expected_z = np.zeros(len(repeat_points_z))
@@ -134,7 +148,7 @@ def test_repeat():
     result_repeat_z = evaluate(expr_repeat_z, repeat_points_z)
     np.testing.assert_allclose(result_repeat_z, expected_z, atol=1e-6)
     # Test method call
-    expr_repeat_z_method = Z.repeat_z(2.0)
+    expr_repeat_z_method = Z.repeat(0, 0, 2.0)
     result_repeat_z_method = evaluate(expr_repeat_z_method, repeat_points_z)
     np.testing.assert_allclose(result_repeat_z_method, expected_z, atol=1e-6)
 
@@ -154,7 +168,7 @@ def test_multi_dimensional_repeat():
 
     # Test repeat in xy with z unchanged (repeat_xyz)
     expr_to_repeat = X + Y # Use a simple expression
-    expr_repeat_xy = fpm.repeat_xyz(expr_to_repeat, 2.0, 2.0, 0)
+    expr_repeat_xy = fpm.repeat(expr_to_repeat, 2.0, 2.0, 0)
 
     # Calculate expected values based on our implementation
     expected_xy = np.zeros(len(repeat_points_xyz))
@@ -174,14 +188,14 @@ def test_multi_dimensional_repeat():
     result_repeat_xy = evaluate(expr_repeat_xy, repeat_points_xyz)
     np.testing.assert_allclose(result_repeat_xy, expected_xy, atol=1e-6)
     # Test method call for repeat_xyz
-    expr_repeat_xy_method = expr_to_repeat.repeat_xyz(2.0, 2.0, 0)
+    expr_repeat_xy_method = expr_to_repeat.repeat(2.0, 2.0, 0)
     result_repeat_xy_method = evaluate(expr_repeat_xy_method, repeat_points_xyz)
     np.testing.assert_allclose(result_repeat_xy_method, expected_xy, atol=1e-6)
 
 
     # Test repeat in all dimensions (uniform repeat)
     expr_to_repeat_all = X + Y + Z
-    expr_repeat_all = fpm.repeat(expr_to_repeat_all, 2.0)
+    expr_repeat_all = fpm.repeat(expr_to_repeat_all, 2.0, 2.0, 2.0)
 
     # Calculate expected values
     expected_all = np.zeros(len(repeat_points_xyz))
@@ -202,33 +216,40 @@ def test_multi_dimensional_repeat():
     result_repeat_all = evaluate(expr_repeat_all, repeat_points_xyz)
     np.testing.assert_allclose(result_repeat_all, expected_all, atol=1e-6)
     # Test method call for repeat
-    expr_repeat_all_method = expr_to_repeat_all.repeat(2.0)
+    expr_repeat_all_method = expr_to_repeat_all.repeat(2.0, 2.0, 2.0)
     result_repeat_all_method = evaluate(expr_repeat_all_method, repeat_points_xyz)
     np.testing.assert_allclose(result_repeat_all_method, expected_all, atol=1e-6)
 
 
 def test_symmetry():
-    """Test symmetry aliases."""
-    # symmetry_x should be same as mirror_x
-    expr_mirror_x = fpm.mirror_x(X)
-    expr_symmetry_x = fpm.symmetry_x(X)
+    """Test symmetry function (alias for mirror)."""
+    # Symmetry X should be same as mirror X
+    expr_mirror_x = fpm.mirror(X, mx=True)
+    expr_symmetry_x = fpm.symmetry(X, sx=True)
+    expr_symmetry_x_m = X.symmetry(sx=True)
     np.testing.assert_allclose(evaluate(expr_mirror_x), evaluate(expr_symmetry_x))
-    expr_symmetry_x_method = X.symmetry_x()
-    np.testing.assert_allclose(evaluate(expr_mirror_x), evaluate(expr_symmetry_x_method))
+    np.testing.assert_allclose(evaluate(expr_mirror_x), evaluate(expr_symmetry_x_m))
 
-    # symmetry_y should be same as mirror_y
-    expr_mirror_y = fpm.mirror_y(Y)
-    expr_symmetry_y = fpm.symmetry_y(Y)
+    # Symmetry Y should be same as mirror Y
+    expr_mirror_y = fpm.mirror(Y, my=True)
+    expr_symmetry_y = fpm.symmetry(Y, sy=True)
+    expr_symmetry_y_m = Y.symmetry(sy=True)
     np.testing.assert_allclose(evaluate(expr_mirror_y), evaluate(expr_symmetry_y))
-    expr_symmetry_y_method = Y.symmetry_y()
-    np.testing.assert_allclose(evaluate(expr_mirror_y), evaluate(expr_symmetry_y_method))
+    np.testing.assert_allclose(evaluate(expr_mirror_y), evaluate(expr_symmetry_y_m))
 
-    # symmetry_z should be same as mirror_z
-    expr_mirror_z = fpm.mirror_z(Z)
-    expr_symmetry_z = fpm.symmetry_z(Z)
+    # Symmetry Z should be same as mirror Z
+    expr_mirror_z = fpm.mirror(Z, mz=True)
+    expr_symmetry_z = fpm.symmetry(Z, sz=True)
+    expr_symmetry_z_m = Z.symmetry(sz=True)
     np.testing.assert_allclose(evaluate(expr_mirror_z), evaluate(expr_symmetry_z))
-    expr_symmetry_z_method = Z.symmetry_z()
-    np.testing.assert_allclose(evaluate(expr_mirror_z), evaluate(expr_symmetry_z_method))
+    np.testing.assert_allclose(evaluate(expr_mirror_z), evaluate(expr_symmetry_z_m))
+
+    # Symmetry XYZ should be same as mirror XYZ
+    expr_mirror_xyz = fpm.mirror(X + Y + Z, mx=True, my=True, mz=True)
+    expr_symmetry_xyz = fpm.symmetry(X + Y + Z, sx=True, sy=True, sz=True)
+    expr_symmetry_xyz_m = (X + Y + Z).symmetry(sx=True, sy=True, sz=True)
+    np.testing.assert_allclose(evaluate(expr_mirror_xyz), evaluate(expr_symmetry_xyz))
+    np.testing.assert_allclose(evaluate(expr_mirror_xyz), evaluate(expr_symmetry_xyz_m))
 
 
 # Run all tests if executed directly

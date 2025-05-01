@@ -2,9 +2,9 @@
 Transformation functions for Fidget.
 
 This module provides transformation operations for SDF expressions, including:
-- Translation (translate, translate_x, translate_y, translate_z)
-- Scaling (scale, scale_xyz)
-- Rotation (rotate_x, rotate_y, rotate_z)
+- Translation (translate)
+- Scaling (scale)
+- Rotation (rotate)
 - Affine transformations (remap_xyz, remap_affine)
 - Matrix helpers for creating transformation matrices
 """
@@ -52,205 +52,112 @@ def translate(expr, tx, ty, tz):
     x, y, z = fp.x(), fp.y(), fp.z()
     return remap_xyz(expr, x - tx, y - ty, z - tz)
 
-def translate_x(expr, tx):
-    """
-    Translates an expression along the X axis.
-    
-    This function shifts the coordinate system along the X axis, effectively
-    moving the shape in the opposite direction.
-    
-    Args:
-        expr: The SDF expression to translate
-        tx: Translation amount along X axis
-        
-    Returns:
-        A new SDF expression representing the translated shape
-        
-    Raises:
-        TypeError: If expr is not an SDF expression
-        
-    Examples:
-        # Translate a sphere 2 units along the x-axis
-        sphere = fp.shape.sphere(1.0)
-        translated_sphere = fpm.translate_x(sphere, 2.0)
-        
-        # Translate using method call syntax
-        translated_sphere = sphere.translate_x(2.0)
-        
-    Can be used as either:
-    - fpm.translate_x(expr, tx)
-    - expr.translate_x(tx) (via extension)
-    """
-    if not hasattr(expr, '_is_sdf_expr'):
-        raise TypeError("translate_x requires an SDF expression")
-        
-    return translate(expr, tx, 0, 0)
-
-def translate_y(expr, ty):
-    """
-    Translates an expression along the Y axis.
-    
-    Can be used as either:
-    - fpm.translate_y(expr, ty)
-    - expr.translate_y(ty) (via extension)
-    
-    Args:
-        expr: The expression to translate
-        ty: Translation amount along Y axis
-        
-    Returns:
-        Translated expression
-    """
-    return translate(expr, 0, ty, 0)
-
-def translate_z(expr, tz):
-    """
-    Translates an expression along the Z axis.
-    
-    Can be used as either:
-    - fpm.translate_z(expr, tz)
-    - expr.translate_z(tz) (via extension)
-    
-    Args:
-        expr: The expression to translate
-        tz: Translation amount along Z axis
-        
-    Returns:
-        Translated expression
-    """
-    return translate(expr, 0, 0, tz)
-
-def scale_xyz(expr, sx, sy, sz):
+def scale(expr, sx, sy, sz):
     """
     Scales an expression non-uniformly along each axis.
-    
+
     This function scales the coordinate system, effectively scaling the shape
     by the reciprocal of the scale factors. Positive scale factors will preserve
     the shape's orientation, while negative scale factors will mirror the shape
-    along that axis.
-    
+    along that axis. A scale factor of 1 leaves the axis unchanged.
+
     Args:
         expr: The SDF expression to scale
         sx: Scale factor along X axis (non-zero)
         sy: Scale factor along Y axis (non-zero)
         sz: Scale factor along Z axis (non-zero)
-        
+
     Returns:
         A new SDF expression representing the scaled shape
-        
+
     Raises:
         TypeError: If expr is not an SDF expression
         ValueError: If any scale factor is zero
-        
+
     Examples:
         # Scale a sphere to create an ellipsoid
         sphere = fp.shape.sphere(1.0)
-        ellipsoid = fpm.scale_xyz(sphere, 2.0, 1.0, 0.5)
-        
+        ellipsoid = fpm.scale(sphere, 2.0, 1.0, 0.5)
+
         # Scale using method call syntax
-        ellipsoid = sphere.scale_xyz(2.0, 1.0, 0.5)
-        
+        ellipsoid = sphere.scale(2.0, 1.0, 0.5)
+
     Can be used as either:
-    - fpm.scale_xyz(expr, sx, sy, sz)
-    - expr.scale_xyz(sx, sy, sz) (via extension)
+    - fpm.scale(expr, sx, sy, sz)
+    - expr.scale(sx, sy, sz) (via extension)
     """
     if not hasattr(expr, '_is_sdf_expr'):
-        raise TypeError("scale_xyz requires an SDF expression")
-        
+        raise TypeError("scale requires an SDF expression")
+
     if sx == 0 or sy == 0 or sz == 0:
         raise ValueError("Scale factors cannot be zero")
-        
+
     x, y, z = fp.x(), fp.y(), fp.z()
     return remap_xyz(expr, x / sx, y / sy, z / sz)
 
-def scale(expr, s):
+def rotate(expr, rx, ry, rz):
     """
-    Scales an expression uniformly.
-    
-    Can be used as either:
-    - fpm.scale(expr, s)
-    - expr.scale(s) (via extension)
-    
-    Args:
-        expr: The expression to scale
-        s: Uniform scale factor
-        
-    Returns:
-        Scaled expression
-    """
-    if s == 0:
-        raise ValueError("Scale factor cannot be zero")
-        
-    return scale_xyz(expr, s, s, s)
+    Rotates an expression around the Z, Y, and then X axes (intrinsic Tait-Bryan angles).
 
-def rotate_x(expr, angle):
-    """
-    Rotates an expression around the X axis.
-    
-    Can be used as either:
-    - fpm.rotate_x(expr, angle)
-    - expr.rotate_x(angle) (via extension)
-    
+    This function applies rotations sequentially: first around the Z axis by rz,
+    then around the new Y axis by ry, and finally around the newest X axis by rx.
+    The coordinate system is rotated, effectively rotating the shape in the
+    opposite direction around the axes.
+
     Args:
-        expr: The expression to rotate
-        angle: Rotation angle in radians
-        
+        expr: The SDF expression to rotate
+        rx: Rotation angle around the final X axis in radians
+        ry: Rotation angle around the intermediate Y axis in radians
+        rz: Rotation angle around the initial Z axis in radians
+
     Returns:
-        Rotated expression
+        A new SDF expression representing the rotated shape
+
+    Raises:
+        TypeError: If expr is not an SDF expression
+
+    Examples:
+        # Rotate a box 45 degrees around X and 30 degrees around Z
+        box = fp.shape.box(1.0, 2.0, 0.5)
+        rotated_box = fpm.rotate(box, py_math.pi / 4, 0, py_math.pi / 6)
+
+        # Rotate using method call syntax
+        rotated_box = box.rotate(py_math.pi / 4, 0, py_math.pi / 6)
+
+    Can be used as either:
+    - fpm.rotate(expr, rx, ry, rz)
+    - expr.rotate(rx, ry, rz) (via extension)
     """
     if not hasattr(expr, '_is_sdf_expr'):
-        raise TypeError("rotate_x requires an SDF expression")
-        
-    x, y, z = fp.x(), fp.y(), fp.z()
-    c = cos(angle)
-    s = sin(angle)
-    return remap_xyz(expr, x, y * c - z * s, y * s + z * c)
+        raise TypeError("rotate requires an SDF expression")
 
-def rotate_y(expr, angle):
-    """
-    Rotates an expression around the Y axis.
-    
-    Can be used as either:
-    - fpm.rotate_y(expr, angle)
-    - expr.rotate_y(angle) (via extension)
-    
-    Args:
-        expr: The expression to rotate
-        angle: Rotation angle in radians
-        
-    Returns:
-        Rotated expression
-    """
-    if not hasattr(expr, '_is_sdf_expr'):
-        raise TypeError("rotate_y requires an SDF expression")
-        
     x, y, z = fp.x(), fp.y(), fp.z()
-    c = cos(angle)
-    s = sin(angle)
-    return remap_xyz(expr, x * c + z * s, y, -x * s + z * c)
 
-def rotate_z(expr, angle):
-    """
-    Rotates an expression around the Z axis.
-    
-    Can be used as either:
-    - fpm.rotate_z(expr, angle)
-    - expr.rotate_z(angle) (via extension)
-    
-    Args:
-        expr: The expression to rotate
-        angle: Rotation angle in radians
-        
-    Returns:
-        Rotated expression
-    """
-    if not hasattr(expr, '_is_sdf_expr'):
-        raise TypeError("rotate_z requires an SDF expression")
-        
-    x, y, z = fp.x(), fp.y(), fp.z()
-    c = cos(angle)
-    s = sin(angle)
-    return remap_xyz(expr, x * c - y * s, x * s + y * c, z)
+    # Apply rotations in reverse order to the coordinate system (Z -> Y -> X)
+    # This corresponds to rotating the object X -> Y -> Z
+
+    # Rotate around Z axis
+    cz = cos(rz)
+    sz = sin(rz)
+    x1 = x * cz + y * sz
+    y1 = -x * sz + y * cz
+    z1 = z
+
+    # Rotate around Y axis (using the Z-rotated coordinates)
+    cy = cos(ry)
+    sy = sin(ry)
+    x2 = x1 * cy - z1 * sy
+    y2 = y1
+    z2 = x1 * sy + z1 * cy
+
+    # Rotate around X axis (using the Y-Z-rotated coordinates)
+    cx = cos(rx)
+    sx = sin(rx)
+    x_final = x2
+    y_final = y2 * cx + z2 * sx
+    z_final = -y2 * sx + z2 * cx
+
+    return remap_xyz(expr, x_final, y_final, z_final)
 
 def remap_xyz(expr, x_expr, y_expr, z_expr):
     """

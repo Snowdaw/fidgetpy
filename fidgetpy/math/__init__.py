@@ -27,17 +27,14 @@ from .vector_math import (
 )
 
 from .transformations import (
-    translate, translate_x, translate_y, translate_z,
-    scale_xyz, scale, rotate_x, rotate_y, rotate_z,
+    translate, rotate, scale,
     remap_xyz, remap_affine, combine_matrices,
     make_translation_matrix, make_scaling_matrix,
     make_rotation_x_matrix, make_rotation_y_matrix, make_rotation_z_matrix
 )
 
 from .domain_manipulation import (
-    repeat, repeat_xyz, repeat_x, repeat_y, repeat_z, 
-    mirror_x, mirror_y, mirror_z,
-    symmetry_x, symmetry_y, symmetry_z
+    repeat, mirror, symmetry
 )
 
 from .interpolation import (
@@ -65,8 +62,7 @@ __all__ = [
     'length_3d', 'distance_3d', 'dot_3d', 'dot2_3d', 'cross_3d', 'normalize_3d',
     
     # Transformations
-    'translate', 'translate_x', 'translate_y', 'translate_z',
-    'scale_xyz', 'scale', 'rotate_x', 'rotate_y', 'rotate_z',
+    'translate', 'rotate', 'scale',
     'remap_xyz', 'remap_affine', 'combine_matrices',
     
     # Affine Matrix Helpers
@@ -74,9 +70,7 @@ __all__ = [
     'make_rotation_x_matrix', 'make_rotation_y_matrix', 'make_rotation_z_matrix',
     
     # Domain Manipulation
-    'repeat', 'repeat_xyz', 'repeat_x', 'repeat_y', 'repeat_z', 
-    'mirror_x', 'mirror_y', 'mirror_z',
-    'symmetry_x', 'symmetry_y', 'symmetry_z',
+    'repeat', 'mirror', 'symmetry'
     
     # Interpolation
     'mix', 'lerp', 'smoothstep', 'step', 'smootherstep',

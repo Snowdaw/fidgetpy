@@ -52,7 +52,7 @@ def test_complex_expression_creation_and_evaluation():
     box_translated = fpm.translate(box, -1.5, -0.5, 0.0)
     
     # Rotate cylinder using method call
-    cylinder_rotated = cylinder.rotate_x(fpm.sin(y) * 0.5)  # Dynamic rotation based on y
+    cylinder_rotated = cylinder.rotate(fpm.sin(y) * 0.5, 0, 0)  # Dynamic rotation based on y
     
     # === Step 3: Apply domain operations ===
     

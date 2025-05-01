@@ -25,10 +25,8 @@ def test_math_recursion():
 
     # Transformations
     fpm.translate(x, 1, 1, 1)
-    fpm.scale(x, 2)
-    fpm.rotate_x(x, 1)
-    fpm.rotate_y(x, 1)
-    fpm.rotate_z(x, 1)
+    fpm.scale(x, 2, 2, 2)
+    fpm.rotate(x, 1, 1, 1)
 
     # Vector math
     fpm.length([x, x, x])
@@ -38,10 +36,8 @@ def test_math_recursion():
     fpm.normalize([x, x, x])
 
     # Domain manipulation
-    fpm.repeat(x, 1)
-    fpm.mirror_x(x)
-    fpm.mirror_y(x)
-    fpm.mirror_z(x)
+    fpm.repeat(x, 1, 1, 1)
+    fpm.mirror(x, True, True, True)
 
     # Interpolation
     fpm.mix(x, 1, 0.5)
@@ -53,7 +49,6 @@ def test_math_recursion():
     fpm.logical_or(x, True)
     fpm.logical_not(x)
     fpm.logical_xor(x, True)
-# --- Added calls for missing functions ---
 
     # Basic math (cont.)
     fpm.clamp(x, 0, 1)
@@ -65,10 +60,6 @@ def test_math_recursion():
     fpm.ln(x + 1.1) # Ensure input > 0
 
     # Transformations (cont.)
-    fpm.translate_x(x, 1)
-    fpm.translate_y(x, 1)
-    fpm.translate_z(x, 1)
-    fpm.scale_xyz(x, 1, 2, 3)
     fpm.remap_xyz(x, x, x, x)
     fpm.remap_affine(x, [1,0,0, 0,1,0, 0,0,1, 0,0,0]) # Identity matrix
 
@@ -79,13 +70,8 @@ def test_math_recursion():
     fpm.cross(vec, [1, 0, 0])
 
     # Domain manipulation (cont.)
-    fpm.repeat_x(x, 1)
-    fpm.repeat_y(x, 1)
-    fpm.repeat_z(x, 1)
-    fpm.repeat_xyz(x, 1, 1, 1)
-    fpm.symmetry_x(x)
-    fpm.symmetry_y(x)
-    fpm.symmetry_z(x)
+    fpm.repeat(x, 1, 1, 1)
+    fpm.symmetry(x, True, True, True)
 
     # Interpolation (cont.)
     fpm.lerp(x, 1, 0.5)

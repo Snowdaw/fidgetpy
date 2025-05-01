@@ -16,18 +16,14 @@ The math functions have been organized into logically grouped files:
   - length, distance, dot, dot2, ndot, cross, normalize
 
 - **transformations.py**: Transformation operations
-  - translate, translate_x, translate_y, translate_z
-  - scale, scale_xyz
-  - rotate_x, rotate_y, rotate_z
+  - translate, scale, rotate
   - remap_xyz, remap_affine
   - make_translation_matrix, make_scaling_matrix
   - make_rotation_x_matrix, make_rotation_y_matrix, make_rotation_z_matrix
   - combine_matrices
 
 - **domain_manipulation.py**: Domain manipulation functions
-  - repeat, repeat_xyz, repeat_x, repeat_y, repeat_z
-  - mirror_x, mirror_y, mirror_z
-  - symmetry_x, symmetry_y, symmetry_z
+  - repeat, mirror, symmetry
 
 - **interpolation.py**: Interpolation functions
   - mix, lerp
@@ -42,7 +38,7 @@ The math functions have been organized into logically grouped files:
 
 The math module has been designed to hide implementation details while providing a clean, user-friendly API. All functions are available directly from the `fidgetpy.math` namespace, while the individual module files are hidden from the user.
 
-Example usage:
+Example usage:repeat
 
 ```python
 import fidgetpy as fp
@@ -58,11 +54,11 @@ normalized = fpm.normalize(vector)
 
 # Transformations
 transformed = fpm.translate(expr, tx, ty, tz)
-rotated = fpm.rotate_z(expr, angle)
+rotated = fpm.rotate(expr, angle_x, angle_y, angle_z)
 
 # Domain manipulations
-repeated = fpm.repeat(expr, period)
-mirrored = fpm.mirror_x(expr)
+repeated = fpm.repeat(expr, rx, ry, rz)
+mirrored = fpm.mirror(expr, True, False, False)
 
 # Interpolation
 mixed = fpm.mix(a, b, t)
