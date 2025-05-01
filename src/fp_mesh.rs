@@ -284,24 +284,6 @@ pub fn mesh_impl(
         View3::from_center_and_scale(center_vec, scale_f32)
     };
     
-    // Debug info
-    if bounds_min.is_some() && bounds_max.is_some() {
-        // Extract bounds values for debugging
-        let bounds_min_list = bounds_min.unwrap();
-        let bounds_max_list = bounds_max.unwrap();
-        
-        let min_x = bounds_min_list.get_item(0)?.extract::<f64>()? as f32;
-        let min_y = bounds_min_list.get_item(1)?.extract::<f64>()? as f32;
-        let min_z = bounds_min_list.get_item(2)?.extract::<f64>()? as f32;
-        
-        let max_x = bounds_max_list.get_item(0)?.extract::<f64>()? as f32;
-        let max_y = bounds_max_list.get_item(1)?.extract::<f64>()? as f32;
-        let max_z = bounds_max_list.get_item(2)?.extract::<f64>()? as f32;
-        
-        eprintln!("Using bounds: min=({},{},{}), max=({},{},{})",
-                 min_x, min_y, min_z, max_x, max_y, max_z);
-    }
-    
     
     // Create meshing settings with our custom view
     let settings = MeshSettings {

@@ -5,9 +5,7 @@ use std::collections::{HashMap, HashSet};
 use numpy::{PyArray1, PyReadonlyArray2};
 use fidget::context::{Context, Tree};
 use fidget::var::Var;
-use std::io::{BufReader, Cursor, Write};
-use std::iter::Peekable;
-use std::str::Chars;
+use std::io::Write;
 
 use crate::fp_var::PyVar;
 use crate::fp_expr::PyExpr;
@@ -81,37 +79,178 @@ impl PySDFContext {
     ///     An SDF expression parsed from the VM format
     #[pyo3(text_signature = "(text)")]
     pub fn from_vm(&self, text: String) -> PyResult<PyExpr> {
-        // Create a cursor from the string to use as a reader
-        let cursor = Cursor::new(text);
-        let reader = BufReader::new(cursor);
+        // Create a new context for parsing
+        let mut ctx = Context::new();
         
-        // Use Fidget's built-in parser for VM format
-        match Context::from_text(reader) {
-            Ok((ctx, node)) => {
-                // Convert the result to a PyExpr
-                match ctx.export(node) {
-                    Ok(tree) => {
-                        // For now, we don't have a way to extract variable names from the VM format
-                        // So we'll use default variable names
-                        let mut var_names = HashMap::new();
-                        
-                        // Try to identify standard variables
-                        if let Some(var) = tree.var() {
-                            match var {
-                                Var::X => { var_names.insert(var, "x".to_string()); },
-                                Var::Y => { var_names.insert(var, "y".to_string()); },
-                                Var::Z => { var_names.insert(var, "z".to_string()); },
-                                _ => {}
-                            }
-                        }
-                        
-                        Ok(PyExpr { tree, var_names })
+        // Extract variable definitions and build operation map
+        let mut var_names: HashMap<Var, String> = HashMap::new();
+        let mut node_map: HashMap<String, fidget::context::Node> = HashMap::new();
+        
+        // First pass: process variable definitions
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            
+            let register_name = parts[0];
+            let op_code = parts[1];
+            
+            // Handle variable definitions
+            if op_code.starts_with("var-") {
+                let var: Var;
+                let var_name: String;
+                
+                match op_code {
+                    "var-x" => {
+                        var = Var::X;
+                        var_name = "x".to_string();
                     },
-                    Err(e) => Err(PyValueError::new_err(format!("Failed to export tree: {}", e))),
-                }
-            },
-            Err(e) => Err(PyValueError::new_err(format!("Failed to parse VM format: {}", e))),
+                    "var-y" => {
+                        var = Var::Y;
+                        var_name = "y".to_string();
+                    },
+                    "var-z" => {
+                        var = Var::Z;
+                        var_name = "z".to_string();
+                    },
+                    _ => {
+                        // Handle custom variables (like var-w, var-radius, etc.)
+                        if let Some(name) = op_code.strip_prefix("var-") {
+                            var = Var::new();
+                            var_name = name.to_string();
+                        } else {
+                            return Err(PyValueError::new_err(format!("Invalid variable definition: {}", op_code)));
+                        }
+                    }
+                };
+                
+                // Create variable node and add to maps
+                let node = ctx.var(var.clone());
+                node_map.insert(register_name.to_string(), node);
+                var_names.insert(var, var_name);
+            }
         }
+        
+        // Second pass: process operations
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            
+            let register_name = parts[0];
+            let op_code = parts[1];
+            
+            // Skip variable definitions (already processed)
+            if op_code.starts_with("var-") {
+                continue;
+            }
+            
+            // Process constants
+            if op_code == "const" && parts.len() >= 3 {
+                if let Ok(value) = parts[2].parse::<f64>() {
+                    let node = ctx.constant(value);
+                    node_map.insert(register_name.to_string(), node);
+                } else {
+                    return Err(PyValueError::new_err(format!("Invalid constant value: {}", parts[2])));
+                }
+                continue;
+            }
+            
+            // Process unary operations
+            if parts.len() >= 3 {
+                let arg_name = parts[2];
+                let arg_node = match node_map.get(arg_name) {
+                    Some(node) => *node,
+                    None => return Err(PyValueError::new_err(format!("Unknown register: {}", arg_name))),
+                };
+                
+                let node = match op_code {
+                    "neg" => ctx.neg(arg_node),
+                    "abs" => ctx.abs(arg_node),
+                    "recip" => ctx.recip(arg_node),
+                    "sqrt" => ctx.sqrt(arg_node),
+                    "square" => ctx.square(arg_node),
+                    "floor" => ctx.floor(arg_node),
+                    "ceil" => ctx.ceil(arg_node),
+                    "round" => ctx.round(arg_node),
+                    "sin" => ctx.sin(arg_node),
+                    "cos" => ctx.cos(arg_node),
+                    "tan" => ctx.tan(arg_node),
+                    "asin" => ctx.asin(arg_node),
+                    "acos" => ctx.acos(arg_node),
+                    "atan" => ctx.atan(arg_node),
+                    "exp" => ctx.exp(arg_node),
+                    "ln" => ctx.ln(arg_node),
+                    "not" => ctx.not(arg_node),
+                    
+                    // Binary operations (need another operand)
+                    _ => {
+                        if parts.len() >= 4 {
+                            let arg2_name = parts[3];
+                            let arg2_node = match node_map.get(arg2_name) {
+                                Some(node) => *node,
+                                None => return Err(PyValueError::new_err(format!("Unknown register: {}", arg2_name))),
+                            };
+                            
+                            match op_code {
+                                "add" => ctx.add(arg_node, arg2_node),
+                                "sub" => ctx.sub(arg_node, arg2_node),
+                                "mul" => ctx.mul(arg_node, arg2_node),
+                                "div" => ctx.div(arg_node, arg2_node),
+                                "min" => ctx.min(arg_node, arg2_node),
+                                "max" => ctx.max(arg_node, arg2_node),
+                                "compare" => ctx.compare(arg_node, arg2_node),
+                                "mod" => ctx.modulo(arg_node, arg2_node),
+                                "and" => ctx.and(arg_node, arg2_node),
+                                "or" => ctx.or(arg_node, arg2_node),
+                                "atan2" => ctx.atan2(arg_node, arg2_node),
+                                _ => return Err(PyValueError::new_err(format!("Unknown operation: {}", op_code))),
+                            }
+                        } else {
+                            return Err(PyValueError::new_err(format!("Binary operation {} requires two operands", op_code)));
+                        }
+                    }
+                };
+                
+                match node {
+                    Ok(n) => {
+                        node_map.insert(register_name.to_string(), n);
+                    },
+                    Err(e) => return Err(PyValueError::new_err(format!("Operation error: {}", e))),
+                }
+            }
+        }
+        
+        // Get the final node (should be the last one defined)
+        let last_register = match text.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+                                .last()
+                                .and_then(|line| line.split_whitespace().next()) {
+            Some(reg) => reg.to_string(),
+            None => return Err(PyValueError::new_err("No operations found in VM format")),
+        };
+        
+        let final_node = match node_map.get(&last_register) {
+            Some(node) => *node,
+            None => return Err(PyValueError::new_err(format!("Final register {} not found", last_register))),
+        };
+        
+        // Export the node to a tree
+        let tree = ctx.export(final_node).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        
+        // Create a PyExpr from the tree with our collected variable names
+        Ok(PyExpr { tree, var_names })
     }
 
     /// Convert an SDFExpr to VM format.
@@ -131,7 +270,7 @@ impl PySDFContext {
         
         // Write the header
         writeln!(output, "# Fidget VM format export").unwrap();
-        writeln!(output, "# Generated by fidget-py").unwrap();
+        writeln!(output, "# Generated by fidgetpy").unwrap();
         
         // We need to reconstruct the VM representation by walking through the tree
         // and generating the appropriate lines
@@ -291,20 +430,178 @@ impl PySDFContext {
     /// Returns:
     ///     An SDF expression parsed from the F-Rep format
     pub fn from_frep(&self, text: String) -> PyResult<PyExpr> {
-        // Create a new context for parsing
-        let mut ctx = Context::new();
+        // To properly parse the F-Rep, we'll:
+        // 1. Create a VM representation of the F-Rep string
+        // 2. Use our working VM parser to build the expression
         
-        // Parse the F-Rep format into a Fidget expression
-        let mut parser = FRepParser::new(&text, &mut ctx);
-        let node = parser.parse()?;
+        // First, tokenize the F-Rep string
+        let processed_text = text
+            .replace("(", " ( ")
+            .replace(")", " ) ")
+            .replace(",", " , ");
         
-        // Export the node to a tree
-        let tree = ctx.export(node).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let tokens: Vec<&str> = processed_text.split_whitespace().collect();
         
-        // Create a PyExpr from the tree
-        Ok(PyExpr { tree, var_names: HashMap::new() })
+        // Initialize VM format text
+        let mut vm_text = String::new();
+        vm_text.push_str("# Fidget VM format export\n");
+        vm_text.push_str("# Generated from F-Rep\n");
+        
+        // Register counter and maps
+        let mut next_reg = 0;
+        let mut var_map: HashMap<String, String> = HashMap::new();
+        
+        // First pass: identify all variables and add them to the mapping
+        for token in &tokens {
+            match *token {
+                "x" | "X" => {
+                    if !var_map.contains_key("x") {
+                        let reg = format!("_{:x}", next_reg);
+                        next_reg += 1;
+                        var_map.insert("x".to_string(), reg.clone());
+                        vm_text.push_str(&format!("{} var-x\n", reg));
+                    }
+                },
+                "y" | "Y" => {
+                    if !var_map.contains_key("y") {
+                        let reg = format!("_{:x}", next_reg);
+                        next_reg += 1;
+                        var_map.insert("y".to_string(), reg.clone());
+                        vm_text.push_str(&format!("{} var-y\n", reg));
+                    }
+                },
+                "z" | "Z" => {
+                    if !var_map.contains_key("z") {
+                        let reg = format!("_{:x}", next_reg);
+                        next_reg += 1;
+                        var_map.insert("z".to_string(), reg.clone());
+                        vm_text.push_str(&format!("{} var-z\n", reg));
+                    }
+                },
+                token => {
+                    // Check if this is a custom variable (not a function name, not a number, not a special token)
+                    if !["add", "sub", "mul", "div", "min", "max", "mod", "and", "or", "atan2", "neg",
+                         "abs", "recip", "sqrt", "square", "floor", "ceil", "round", "sin", "cos", "tan",
+                         "asin", "acos", "atan", "exp", "ln", "not", "compare",
+                         "(", ")", ","].contains(&token) &&
+                       !token.parse::<f64>().is_ok() {
+                        // It's a custom variable
+                        if !var_map.contains_key(token) {
+                            let reg = format!("_{:x}", next_reg);
+                            next_reg += 1;
+                            var_map.insert(token.to_string(), reg.clone());
+                            vm_text.push_str(&format!("{} var-{}\n", reg, token));
+                        }
+                    }
+                    // Numbers will be handled in the second pass
+                },
+            }
+        }
+        
+        // Second pass: recursive parsing using a stack-based approach
+        // This stack will hold the operations and operands
+        let mut op_stack: Vec<&str> = Vec::new();
+        let mut output_queue: Vec<String> = Vec::new();
+        
+        // Helper to get a new register
+        let mut get_new_reg = || {
+            let reg = format!("_{:x}", next_reg);
+            next_reg += 1;
+            reg
+        };
+        
+        // Pre-parse into postfix notation using the shunting-yard algorithm
+        let mut i = 0;
+        while i < tokens.len() {
+            match tokens[i] {
+                "(" => {
+                    op_stack.push("(");
+                },
+                ")" => {
+                    // Pop operators until we find the matching opening parenthesis
+                    while let Some(op) = op_stack.pop() {
+                        if op == "(" {
+                            break;
+                        }
+                        output_queue.push(op.to_string());
+                    }
+                },
+                "," => {
+                    // Commas are used to separate function arguments
+                    // Pop operators until we hit a left parenthesis
+                    while let Some(op) = op_stack.last() {
+                        if *op == "(" {
+                            break;
+                        }
+                        output_queue.push(op_stack.pop().unwrap().to_string());
+                    }
+                },
+                token => {
+                    // Check if this is a function
+                    if ["add", "sub", "mul", "div", "min", "max", "mod", "and", "or", "atan2", "neg",
+                        "abs", "recip", "sqrt", "square", "floor", "ceil", "round", "sin", "cos", "tan",
+                        "asin", "acos", "atan", "exp", "ln", "not", "compare"].contains(&token) {
+                        // Push function onto operator stack
+                        op_stack.push(token);
+                    } else if var_map.contains_key(token) {
+                        // It's a variable, push it to the output
+                        output_queue.push(var_map.get(token).unwrap().clone());
+                    } else if let Ok(val) = token.parse::<f64>() {
+                        // It's a constant, add it to the VM
+                        let reg = get_new_reg();
+                        vm_text.push_str(&format!("{} const {}\n", reg, val));
+                        output_queue.push(reg);
+                    }
+                }
+            }
+            i += 1;
+        }
+        
+        // Pop any remaining operators from the stack
+        while let Some(op) = op_stack.pop() {
+            if op == "(" {
+                return Err(PyValueError::new_err("Mismatched parentheses in F-Rep"));
+            }
+            output_queue.push(op.to_string());
+        }
+        
+        // Third pass: Convert postfix notation to VM format
+        let mut arg_stack: Vec<String> = Vec::new();
+        for token in output_queue {
+            if ["add", "sub", "mul", "div", "min", "max", "mod", "and", "or", "atan2"].contains(&token.as_str()) {
+                // Binary operations
+                if arg_stack.len() < 2 {
+                    return Err(PyValueError::new_err(format!("Not enough arguments for binary operation {}", token)));
+                }
+                let arg2 = arg_stack.pop().unwrap();
+                let arg1 = arg_stack.pop().unwrap();
+                let result_reg = get_new_reg();
+                vm_text.push_str(&format!("{} {} {} {}\n", result_reg, token, arg1, arg2));
+                arg_stack.push(result_reg);
+            } else if ["neg", "abs", "recip", "sqrt", "square", "floor", "ceil", "round",
+                       "sin", "cos", "tan", "asin", "acos", "atan", "exp", "ln", "not"].contains(&token.as_str()) {
+                // Unary operations
+                if arg_stack.is_empty() {
+                    return Err(PyValueError::new_err(format!("Not enough arguments for unary operation {}", token)));
+                }
+                let arg = arg_stack.pop().unwrap();
+                let result_reg = get_new_reg();
+                vm_text.push_str(&format!("{} {} {}\n", result_reg, token, arg));
+                arg_stack.push(result_reg);
+            } else {
+                // It's a register (variable or constant), just push it to the stack
+                arg_stack.push(token);
+            }
+        }
+        
+        // Ensure we have exactly one value left on the stack
+        if arg_stack.len() != 1 {
+            return Err(PyValueError::new_err("Invalid F-Rep expression: too many values left"));
+        }
+        
+        // Use our working VM parser to build the final expression
+        self.from_vm(vm_text)
     }
-
     /// Args:
     ///     handle: The handle of the imported expression.
     ///     values: A numpy array of shape (N, num_vars), where each row is a mapping of variable values.
@@ -339,385 +636,4 @@ impl PySDFContext {
         Ok(PyArray1::from_vec(py, results).into())
     }
 
-}
-
-/// A parser for F-Rep format strings
-struct FRepParser<'a> {
-    input: Peekable<Chars<'a>>,
-    ctx: &'a mut Context,
-}
-
-impl<'a> FRepParser<'a> {
-    /// Create a new F-Rep parser
-    fn new(input: &'a str, ctx: &'a mut Context) -> Self {
-        Self {
-            input: input.chars().peekable(),
-            ctx,
-        }
-    }
-    
-    /// Parse the input string into a Fidget expression
-    fn parse(&mut self) -> PyResult<fidget::context::Node> {
-        self.skip_whitespace();
-        self.parse_expr()
-    }
-    
-    /// Parse an expression
-    fn parse_expr(&mut self) -> PyResult<fidget::context::Node> {
-        self.skip_whitespace();
-        
-        // Check if the next token is a function name
-        if let Some(c) = self.input.peek() {
-            if c.is_alphabetic() {
-                return self.parse_function_call();
-            } else if c.is_numeric() || *c == '-' || *c == '.' {
-                return self.parse_number();
-            } else if *c == '(' {
-                // Skip the opening parenthesis
-                self.input.next();
-                
-                // Parse the expression inside the parentheses
-                let expr = self.parse_expr()?;
-                
-                // Skip the closing parenthesis
-                self.skip_whitespace();
-                if let Some(')') = self.input.next() {
-                    return Ok(expr);
-                } else {
-                    return Err(PyValueError::new_err("Expected closing parenthesis"));
-                }
-            }
-        }
-        
-        Err(PyValueError::new_err("Unexpected token"))
-    }
-    
-    /// Parse a function call
-    fn parse_function_call(&mut self) -> PyResult<fidget::context::Node> {
-        // Parse the function name
-        let name = self.parse_identifier()?;
-        
-        self.skip_whitespace();
-        
-        // Check for opening parenthesis
-        if let Some('(') = self.input.next() {
-            // Parse the arguments
-            let mut args = Vec::new();
-            
-            self.skip_whitespace();
-            
-            // Check if there are any arguments
-            if let Some(')') = self.input.peek() {
-                // No arguments
-                self.input.next();
-            } else {
-                // Parse the first argument
-                args.push(self.parse_expr()?);
-                
-                // Parse the rest of the arguments
-                loop {
-                    self.skip_whitespace();
-                    
-                    if let Some(')') = self.input.peek() {
-                        // End of arguments
-                        self.input.next();
-                        break;
-                    } else if let Some(',') = self.input.peek() {
-                        // Skip the comma
-                        self.input.next();
-                        
-                        // Parse the next argument
-                        args.push(self.parse_expr()?);
-                    } else {
-                        return Err(PyValueError::new_err("Expected comma or closing parenthesis"));
-                    }
-                }
-            }
-            
-            // Create the function call node
-            match name.as_str() {
-                // Binary operations
-                "add" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("add requires 2 arguments"));
-                    }
-                    Ok(self.ctx.add(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "sub" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("sub requires 2 arguments"));
-                    }
-                    Ok(self.ctx.sub(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "mul" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("mul requires 2 arguments"));
-                    }
-                    Ok(self.ctx.mul(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "div" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("div requires 2 arguments"));
-                    }
-                    Ok(self.ctx.div(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "min" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("min requires 2 arguments"));
-                    }
-                    Ok(self.ctx.min(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "max" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("max requires 2 arguments"));
-                    }
-                    Ok(self.ctx.max(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "mod" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("mod requires 2 arguments"));
-                    }
-                    Ok(self.ctx.modulo(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "and" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("and requires 2 arguments"));
-                    }
-                    Ok(self.ctx.and(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "or" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("or requires 2 arguments"));
-                    }
-                    Ok(self.ctx.or(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "atan2" => {
-                    if args.len() != 2 {
-                        return Err(PyValueError::new_err("atan2 requires 2 arguments"));
-                    }
-                    Ok(self.ctx.atan2(args[0], args[1]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                
-                // Unary operations
-                "neg" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("neg requires 1 argument"));
-                    }
-                    Ok(self.ctx.neg(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "abs" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("abs requires 1 argument"));
-                    }
-                    Ok(self.ctx.abs(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "recip" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("recip requires 1 argument"));
-                    }
-                    Ok(self.ctx.recip(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "sqrt" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("sqrt requires 1 argument"));
-                    }
-                    Ok(self.ctx.sqrt(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "square" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("square requires 1 argument"));
-                    }
-                    Ok(self.ctx.square(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "floor" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("floor requires 1 argument"));
-                    }
-                    Ok(self.ctx.floor(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "ceil" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("ceil requires 1 argument"));
-                    }
-                    Ok(self.ctx.ceil(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "round" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("round requires 1 argument"));
-                    }
-                    Ok(self.ctx.round(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "sin" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("sin requires 1 argument"));
-                    }
-                    Ok(self.ctx.sin(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "cos" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("cos requires 1 argument"));
-                    }
-                    Ok(self.ctx.cos(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "tan" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("tan requires 1 argument"));
-                    }
-                    Ok(self.ctx.tan(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "asin" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("asin requires 1 argument"));
-                    }
-                    Ok(self.ctx.asin(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "acos" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("acos requires 1 argument"));
-                    }
-                    Ok(self.ctx.acos(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "atan" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("atan requires 1 argument"));
-                    }
-                    Ok(self.ctx.atan(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "exp" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("exp requires 1 argument"));
-                    }
-                    Ok(self.ctx.exp(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "ln" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("ln requires 1 argument"));
-                    }
-                    Ok(self.ctx.ln(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                "not" => {
-                    if args.len() != 1 {
-                        return Err(PyValueError::new_err("not requires 1 argument"));
-                    }
-                    Ok(self.ctx.not(args[0]).map_err(|e| PyValueError::new_err(e.to_string()))?)
-                },
-                
-                // Unknown function
-                _ => Err(PyValueError::new_err(format!("Unknown function: {}", name))),
-            }
-        } else {
-            // No opening parenthesis, so this is a variable
-            match name.as_str() {
-                "x" | "X" => Ok(self.ctx.var(Var::X)),
-                "y" | "Y" => Ok(self.ctx.var(Var::Y)),
-                "z" | "Z" => Ok(self.ctx.var(Var::Z)),
-                _ => Err(PyValueError::new_err(format!("Unknown variable: {}", name))),
-            }
-        }
-    }
-    
-    /// Parse a number
-    fn parse_number(&mut self) -> PyResult<fidget::context::Node> {
-        let mut number = String::new();
-        
-        // Parse the sign
-        if let Some('-') = self.input.peek() {
-            number.push(self.input.next().unwrap());
-        }
-        
-        // Parse the integer part
-        while let Some(&c) = self.input.peek() {
-            if c.is_numeric() {
-                number.push(self.input.next().unwrap());
-            } else {
-                break;
-            }
-        }
-        
-        // Parse the decimal part
-        if let Some('.') = self.input.peek() {
-            number.push(self.input.next().unwrap());
-            
-            while let Some(&c) = self.input.peek() {
-                if c.is_numeric() {
-                    number.push(self.input.next().unwrap());
-                } else {
-                    break;
-                }
-            }
-        }
-        
-        // Parse the exponent part
-        if let Some(&c) = self.input.peek() {
-            if c == 'e' || c == 'E' {
-                number.push(self.input.next().unwrap());
-                
-                // Parse the exponent sign
-                if let Some(&c) = self.input.peek() {
-                    if c == '+' || c == '-' {
-                        number.push(self.input.next().unwrap());
-                    }
-                }
-                
-                // Parse the exponent value
-                let mut has_digits = false;
-                while let Some(&c) = self.input.peek() {
-                    if c.is_numeric() {
-                        number.push(self.input.next().unwrap());
-                        has_digits = true;
-                    } else {
-                        break;
-                    }
-                }
-                
-                if !has_digits {
-                    return Err(PyValueError::new_err("Invalid number format: exponent has no digits"));
-                }
-            }
-        }
-        
-        // Convert the string to a number
-        match number.parse::<f64>() {
-            Ok(value) => Ok(self.ctx.constant(value)),
-            Err(_) => Err(PyValueError::new_err(format!("Invalid number format: {}", number))),
-        }
-    }
-    
-    /// Parse an identifier
-    fn parse_identifier(&mut self) -> PyResult<String> {
-        let mut identifier = String::new();
-        
-        // Parse the first character
-        if let Some(&c) = self.input.peek() {
-            if c.is_alphabetic() || c == '_' {
-                identifier.push(self.input.next().unwrap());
-            } else {
-                return Err(PyValueError::new_err("Invalid identifier: must start with a letter or underscore"));
-            }
-        } else {
-            return Err(PyValueError::new_err("Unexpected end of input"));
-        }
-        
-        // Parse the rest of the identifier
-        while let Some(&c) = self.input.peek() {
-            if c.is_alphanumeric() || c == '_' {
-                identifier.push(self.input.next().unwrap());
-            } else {
-                break;
-            }
-        }
-        
-        Ok(identifier)
-    }
-    
-    /// Skip whitespace characters
-    fn skip_whitespace(&mut self) {
-        while let Some(&c) = self.input.peek() {
-            if c.is_whitespace() {
-                self.input.next();
-            } else {
-                break;
-            }
-        }
-    }
 }

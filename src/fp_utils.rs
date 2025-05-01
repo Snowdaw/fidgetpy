@@ -166,8 +166,43 @@ pub fn parse_vm_to_frep(vm_str: &str, var_names: &HashMap<Var, String>) -> Strin
     // Second pass: build expressions by substituting registers
     let mut register_map: HashMap<String, String> = HashMap::new();
     
+    // First, process all variable definitions to ensure they're available
+    for (reg_name, op, _) in register_defs.iter().filter(|(_, op, _)| op.starts_with("var-")) {
+        match op.as_str() {
+            "var-x" => {
+                let var_name = var_names.get(&Var::X).cloned().unwrap_or_else(|| "x".to_string());
+                register_map.insert(reg_name.clone(), var_name);
+            },
+            "var-y" => {
+                let var_name = var_names.get(&Var::Y).cloned().unwrap_or_else(|| "y".to_string());
+                register_map.insert(reg_name.clone(), var_name);
+            },
+            "var-z" => {
+                let var_name = var_names.get(&Var::Z).cloned().unwrap_or_else(|| "z".to_string());
+                register_map.insert(reg_name.clone(), var_name);
+            },
+            // Handle custom variable names in the format var-name
+            op if op.starts_with("var-") => {
+                // Extract the variable name from the var-name format
+                let var_name = op.strip_prefix("var-").unwrap_or("custom").to_string();
+                if var_name != "custom" {
+                    // Use the extracted name directly
+                    register_map.insert(reg_name.clone(), var_name);
+                } else {
+                    // Fallback for var-custom
+                    register_map.insert(reg_name.clone(), "custom_var".to_string());
+                }
+            },
+            _ => {}
+        }
+    }
+    
     // Process registers in order (they should already be in dependency order)
     for (reg_name, op, operands) in register_defs.iter() {
+        // Skip variables as they've already been processed
+        if op.starts_with("var-") {
+            continue;
+        }
         match op.as_str() {
             "const" => {
                 if !operands.is_empty() {
@@ -309,6 +344,8 @@ fn get_operand_value(operand: &str, register_map: &HashMap<String, String>) -> S
     }
 }
 
+// Unused function removed
+
 /// Convert a tree to VM format string, parse it, and then convert to F-Rep
 pub fn tree_to_vm_to_frep(tree: &Tree, var_names: &HashMap<Var, String>) -> String {
     // Create a PyExpr to use the existing to_vm functionality
@@ -325,7 +362,43 @@ pub fn tree_to_vm_to_frep(tree: &Tree, var_names: &HashMap<Var, String>) -> Stri
     };
     
     // Parse the VM string to create F-Rep
-    parse_vm_to_frep(&vm_str, var_names)
+    let mut result = parse_vm_to_frep(&vm_str, var_names);
+    
+    // Fix any remaining register references in the result
+    // This handles cases where the result still contains _5, _7, etc.
+    if result.contains('_') {
+        // Create a map of variable registers to their names from the VM string
+        let mut var_register_map = HashMap::new();
+        
+        for line in vm_str.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 && parts[0].starts_with('_') {
+                if parts[1] == "var-x" {
+                    var_register_map.insert(parts[0], "x");
+                } else if parts[1] == "var-y" {
+                    var_register_map.insert(parts[0], "y");
+                } else if parts[1] == "var-z" {
+                    var_register_map.insert(parts[0], "z");
+                } else if parts[1].starts_with("var-") {
+                    if let Some(var_name) = parts[1].strip_prefix("var-") {
+                        var_register_map.insert(parts[0], var_name);
+                    }
+                }
+            }
+        }
+        
+        // Replace register references in the result
+        for (reg, var) in var_register_map {
+            result = result.replace(reg, var);
+        }
+    }
+    
+    result
 }
 
 

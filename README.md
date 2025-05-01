@@ -21,7 +21,7 @@ This project uses [`maturin`](https://www.maturin.rs/) to build the Rust extensi
     source .venv/bin/activate # Linux/macOS
     # .venv\Scripts\activate # Windows
     ```
-2.  **Install dependencies:**
+2.  **Get dependencies:**
     ```bash
     pip install maturin numpy pytest
     git clone "https://github.com/mkeeter/fidget"
@@ -39,7 +39,6 @@ Note that when running the tests with pytest in order for the shape tests to wor
 
 ```python
 import fidgetpy as fp
-import numpy as np
 
 # --- Define Variables (Identity + Name) ---
 # Standard axes (var objects with names 'x', 'y', 'z')
@@ -72,15 +71,15 @@ print(f"Combined Shape: {combined_shape}")
 # Example Output: add(mul(0.500, sub(add(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500)), sqrt(add(square(sub(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500))), square(0.200))))), mul(0.500, sub(add(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500)), sqrt(add(square(sub(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500))), square(0.200))))))
 
 # --- Evaluation ---
-# Define points as a NumPy array (N, num_vars)
+# Define points as a list of lists or NumPy array (N, num_vars)
 # Columns must match the order of variables provided later!
-points = np.array([
+points = [
     # x,   y,   z, radius
     [0.0, 0.0, 0.0, 1.0],  # Origin, radius 1 -> dist = -1.0 (inside sphere)
     [1.5, 0.0, 0.0, 1.0],  # Center of translated sphere, radius 1 -> dist = -1.0
     [0.5, 0.0, 0.0, 1.0],  # Near box surface, radius 1
     [3.0, 4.0, 0.0, 1.0],  # Far away, radius 1
-], dtype=np.float32)
+]
 
 # Define the list of *original var instances* corresponding to the columns
 # The order MUST match the columns in 'points'!
@@ -88,7 +87,7 @@ variables_for_eval = [x, y, z, radius] # Use the var objects
 
 # Evaluate the by calling .eval() on the expression
 # Backend defaults to 'jit' if available, otherwise 'vm'
-distances = combined_shape.eval(points, variables_for_eval)
+distances = fp.eval(combined_shape, points, variables_for_eval)
 
 # Explicitly request VM backend
 # distances_vm = combined_shape.eval(points, variables_for_eval, backend='vm')
@@ -102,7 +101,7 @@ print(distances)
 
 ## API Consistency & Error Messages
 
-*   **Consistency:** The API now offers both method chaining (`expr.sqrt()`) and functional (`fp.sqrt(expr)`) styles for most operations. Naming generally follows standard mathematical conventions.
+*   **Consistency:** The API offers both method chaining (`expr.sqrt()`) and functional (`fp.sqrt(expr)`) styles for most operations. Naming generally follows standard mathematical conventions.
 *   **Error Messages:** Efforts have been made to provide informative Python `ValueError` exceptions for issues like incorrect input shapes, invalid backend names, or invalid context handles. Errors originating from the core Fidget library (like `MismatchedSlices`) are also propagated with their original details.
 
 ## Module Organization
@@ -122,6 +121,13 @@ The library is organized into several modules for better organization:
   * Boolean operations (union, intersection, etc.)
   * Blending operations (smooth_union, smooth_intersection, etc.)
   * Domain operations (onion, elongate, etc.)
+
+ * **shape:** basic shapes
+   * Primitive shapes (sphere, box, etc.)
+   * Cylinder shapes (cylinder, cone, etc.)
+   * Curve shapes (polyline, quadratic bezier, etc.)
+
+
 
 ## Import/Export Functionality
 
@@ -176,8 +182,7 @@ frep_text = fp.to_frep(sphere)
 print(frep_text)
 # Output: sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), 1.000)
 
-# Import from F-Rep format (not yet implemented)
-# imported_expr = fp.from_frep(frep_text)
+imported_expr = fp.from_frep(frep_text)
 ```
 
 See the `vm_frep_example.py` file for more detailed examples of using these functions.
@@ -241,7 +246,6 @@ mesh = fp.mesh(cylinder,
                bounds_min=[-3,-3,-3],
                bounds_max=[3,3,3],
                depth=5,
-               numpy=True,
                variables=variables,
                variable_values=variable_values)
 ```
@@ -265,10 +269,3 @@ fp.save_stl(mesh, "box.stl")
 ```
 
 The `save_stl()` function works with both Python list and NumPy array mesh representations, so you can use it regardless of the `numpy` parameter you used when generating the mesh.
-
-## Current Limitations / Future Work
-
-* **Missing Operations:** Some common operations like smooth subtraction/intersection are not yet fully exposed as direct methods/functions.
-* **Constant Inspection:** There's no easy way to retrieve the value of a `constant` expression node from Python.
-* **String Representation:** `str(expression)` outputs a concise F-Rep style string using variable names where available. `repr(expression)` still outputs the Rust `Debug` format.
-* **F-Rep Parsing:** The `from_frep()` method is not yet implemented. Currently only VM format can be imported.

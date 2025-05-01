@@ -137,11 +137,30 @@ def test_frep_export_torus():
     assert "sqrt" in frep_text.lower() # Check if sqrt (from length) is present
     assert "sub" in frep_text.lower()  # Check if subtraction is present
 
-def test_from_frep_not_implemented():
-    """Verify that from_frep raises an appropriate error."""
-    # Expecting ValueError based on example, but could be NotImplementedError
-    with pytest.raises((ValueError, NotImplementedError)):
-        fp.from_frep("some_frep_string") # Content doesn't matter much here
+def test_from_frep_not_implemented(tmp_path):
+    """Test saving a cube expression to a F-Rep file and loading it back."""
+    # Create a cube expression
+    x, y, z = fp.x(), fp.y(), fp.z()
+    # Use abs() and max() from the math module
+    from fidgetpy.math.basic_math import abs, max
+    cube = max(max(abs(x) - 1, abs(y) - 1), abs(z) - 1)
+    
+    # Save to VM format in a temporary file
+    vm_text = fp.to_frep(cube)
+    frep_file = tmp_path / "test_cube.frep"
+    frep_file.write_text(vm_text)
+    
+    # Load from VM format
+    loaded_frep_text = frep_file.read_text()
+    loaded_expr = fp.from_frep(loaded_frep_text)
+    
+    assert loaded_expr is not None # Check if import returned an object
+    
+    # Evaluate at origin (should be -1) and a point outside (should be > 0)
+    points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32)
+    values = fp.eval(loaded_expr, points)
+    assert np.isclose(values[0], -1.0)
+    assert values[1] > 0.0
 
 def test_practical_vm_save_load(tmp_path):
     """Test saving a cube expression to a VM file and loading it back."""

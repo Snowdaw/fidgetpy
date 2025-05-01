@@ -614,12 +614,10 @@ impl PyExpr {
         }
     }
 
-    /// Debug representation of the SDF expression
     fn __repr__(&self) -> String {
-        format!("{:?}", self.tree)
+        self.f_rep()
     }
 
-    /// String representation of the SDF expression
     fn __str__(&self) -> String {
         self.f_rep()
     }
