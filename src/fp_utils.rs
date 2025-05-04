@@ -329,6 +329,104 @@ pub fn parse_vm_to_frep(vm_str: &str, var_names: &HashMap<Var, String>) -> Strin
                     register_map.insert(reg_name.clone(), format!("compare({}, {})", arg1, arg2));
                 }
             },
+            "mod" => {
+                if operands.len() >= 2 {
+                    let arg1 = get_operand_value(&operands[0], &register_map);
+                    let arg2 = get_operand_value(&operands[1], &register_map);
+                    register_map.insert(reg_name.clone(), format!("mod({}, {})", arg1, arg2));
+                }
+            },
+            "atan2" => {
+                if operands.len() >= 2 {
+                    let arg1 = get_operand_value(&operands[0], &register_map);
+                    let arg2 = get_operand_value(&operands[1], &register_map);
+                    register_map.insert(reg_name.clone(), format!("atan2({}, {})", arg1, arg2));
+                }
+            },
+            "abs" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("abs({})", arg));
+                }
+            },
+            "recip" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("recip({})", arg));
+                }
+            },
+            "square" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("square({})", arg));
+                }
+            },
+            "floor" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("floor({})", arg));
+                }
+            },
+            "ceil" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("ceil({})", arg));
+                }
+            },
+            "round" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("round({})", arg));
+                }
+            },
+            "sin" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("sin({})", arg));
+                }
+            },
+            "cos" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("cos({})", arg));
+                }
+            },
+            "tan" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("tan({})", arg));
+                }
+            },
+            "asin" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("asin({})", arg));
+                }
+            },
+            "acos" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("acos({})", arg));
+                }
+            },
+            "atan" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("atan({})", arg));
+                }
+            },
+            "exp" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("exp({})", arg));
+                }
+            },
+            "ln" => {
+                if operands.len() >= 1 {
+                    let arg = get_operand_value(&operands[0], &register_map);
+                    register_map.insert(reg_name.clone(), format!("ln({})", arg));
+                }
+            },
             _ => {
                 // For other operations we don't recognize, just keep the raw form
                 let operation = format!("{}({})", op, operands.join(", "));
@@ -382,9 +480,10 @@ pub fn tree_to_vm_to_frep(tree: &Tree, var_names: &HashMap<Var, String>) -> Stri
     // Fix any remaining register references in the result
     // This handles cases where the result still contains _5, _7, etc.
     if result.contains('_') {
-        // Create a map of variable registers to their names from the VM string
-        let mut var_register_map = HashMap::new();
+        // Create a map of registers to their expressions from the VM string
+        let mut all_register_map = HashMap::new();
         
+        // First pass: Collect all register definitions from VM
         for line in vm_str.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -393,23 +492,45 @@ pub fn tree_to_vm_to_frep(tree: &Tree, var_names: &HashMap<Var, String>) -> Stri
             
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 && parts[0].starts_with('_') {
-                if parts[1] == "var-x" {
-                    var_register_map.insert(parts[0], "x");
-                } else if parts[1] == "var-y" {
-                    var_register_map.insert(parts[0], "y");
-                } else if parts[1] == "var-z" {
-                    var_register_map.insert(parts[0], "z");
-                } else if parts[1].starts_with("var-") {
-                    if let Some(var_name) = parts[1].strip_prefix("var-") {
-                        var_register_map.insert(parts[0], var_name);
+                let reg_name = parts[0];
+                
+                // For variable registers, map to their variable names
+                if parts[1].starts_with("var-") {
+                    if parts[1] == "var-x" {
+                        all_register_map.insert(reg_name.to_string(), "x".to_string());
+                    } else if parts[1] == "var-y" {
+                        all_register_map.insert(reg_name.to_string(), "y".to_string());
+                    } else if parts[1] == "var-z" {
+                        all_register_map.insert(reg_name.to_string(), "z".to_string());
+                    } else if let Some(var_name) = parts[1].strip_prefix("var-") {
+                        all_register_map.insert(reg_name.to_string(), var_name.to_string());
                     }
+                }
+                // For constants, map to their values
+                else if parts[1] == "const" && parts.len() >= 3 {
+                    all_register_map.insert(reg_name.to_string(), parts[2].to_string());
+                }
+                // For other operations, get them from our register_map if available
+                // For other operations, see if we already have an expression for this register
+                else if let Some(expr) = all_register_map.get(&reg_name.to_string()) {
+                    all_register_map.insert(reg_name.to_string(), expr.clone());
                 }
             }
         }
         
-        // Replace register references in the result
-        for (reg, var) in var_register_map {
-            result = result.replace(reg, var);
+        // Use the register map to repeatedly replace references until no more replacements occur
+        let mut previous_result = String::new();
+        let mut iterations = 0;
+        let max_iterations = 10; // Prevent infinite loops
+        
+        while previous_result != result && iterations < max_iterations {
+            previous_result = result.clone();
+            
+            for (reg, replacement) in &all_register_map {
+                result = result.replace(reg, replacement);
+            }
+            
+            iterations += 1;
         }
     }
     
