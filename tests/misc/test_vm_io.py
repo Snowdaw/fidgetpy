@@ -21,7 +21,7 @@ def count_operations(vm_content):
 # Fixture to load the bear.vm content once
 @pytest.fixture(scope="module")
 def bear_vm_content():
-    bear_vm_path = os.path.join(os.path.dirname(__file__), "..", "..", "fidget", "models", "bear.vm")
+    bear_vm_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "fidget", "models", "bear.vm")
     if not os.path.exists(bear_vm_path):
         pytest.skip(f"bear.vm not found at expected location: {bear_vm_path}")
     with open(bear_vm_path, "r") as f:
@@ -81,7 +81,7 @@ def test_bear_vm_eval(imported_bear_expr):
         [10.0, 10.0, 10.0] # A point likely outside
     ], dtype=np.float32)
     
-    values = fp.eval(imported_bear_expr, points_to_test)
+    values = fp.eval(imported_bear_expr, points_to_test, [fp.x(), fp.y(), fp.z()])
     
     assert values.shape == (4,)
     
@@ -111,7 +111,7 @@ def test_vm_roundtrip_simple_sphere():
     
     # Evaluate at origin (should be -1) and a point outside (should be > 0)
     points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32)
-    values = fp.eval(imported_expr, points)
+    values = fp.eval(imported_expr, points, [x, y, z])
     assert np.isclose(values[0], -1.0)
     assert values[1] > 0.0
 
@@ -137,7 +137,7 @@ def test_frep_export_torus():
     assert "sqrt" in frep_text.lower() # Check if sqrt (from length) is present
     assert "sub" in frep_text.lower()  # Check if subtraction is present
 
-def test_from_frep_not_implemented(tmp_path):
+def test_from_frep_save_load(tmp_path):
     """Test saving a cube expression to a F-Rep file and loading it back."""
     # Create a cube expression
     x, y, z = fp.x(), fp.y(), fp.z()
@@ -158,7 +158,7 @@ def test_from_frep_not_implemented(tmp_path):
     
     # Evaluate at origin (should be -1) and a point outside (should be > 0)
     points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32)
-    values = fp.eval(loaded_expr, points)
+    values = fp.eval(loaded_expr, points, [x, y, z])
     assert np.isclose(values[0], -1.0)
     assert values[1] > 0.0
 
@@ -183,6 +183,6 @@ def test_practical_vm_save_load(tmp_path):
     
     # Evaluate at origin (should be -1) and a point outside (should be > 0)
     points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32)
-    values = fp.eval(loaded_expr, points)
+    values = fp.eval(loaded_expr, points, [x, y, z])
     assert np.isclose(values[0], -1.0)
     assert values[1] > 0.0

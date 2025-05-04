@@ -29,9 +29,9 @@ POINTS = np.array([
     [0.5, 0.5, 0.0],  # Inside sphere1, outside sphere2
 ], dtype=np.float32)
 
-def evaluate(expr, points=POINTS):
+def evaluate(expr, points=POINTS, variables=[X, Y, Z]):
     """Helper to evaluate expressions."""
-    return fp.eval(expr, points)
+    return fp.eval(expr, points, variables)
 
 def test_logical_functions():
     """Test that logical functions match their operator equivalents."""
@@ -61,23 +61,23 @@ def test_python_style_logical():
     """Test that python-style logical functions match their method equivalents."""
     # Create array of test points with different values
     py_points = np.array([
-        [0.0, 0.0, 0.0],  # Both 0
-        [1.0, 0.0, 0.0],  # x=1, y=0
-        [0.0, 1.0, 0.0],  # x=0, y=1
-        [1.0, 1.0, 0.0],  # Both 1
-        [0.5, 0.3, 0.0],  # Fractional values
-        [2.0, 3.0, 0.0],  # Values > 1
+        [0.0, 0.0],  # Both 0
+        [1.0, 0.0],  # x=1, y=0
+        [0.0, 1.0],  # x=0, y=1
+        [1.0, 1.0],  # Both 1
+        [0.5, 0.3],  # Fractional values
+        [2.0, 3.0],  # Values > 1
     ], dtype=np.float32)
 
     # Test python_and function
     and_method = X.python_and(Y)
     and_func = python_and(X, Y)
-    np.testing.assert_allclose(evaluate(and_method, py_points), evaluate(and_func, py_points))
+    np.testing.assert_allclose(evaluate(and_method, py_points, [X, Y]), evaluate(and_func, py_points, [X, Y]))
 
     # Test python_or function
     or_method = X.python_or(Y)
     or_func = python_or(X, Y)
-    np.testing.assert_allclose(evaluate(or_method, py_points), evaluate(or_func, py_points))
+    np.testing.assert_allclose(evaluate(or_method, py_points, [X, Y]), evaluate(or_func, py_points, [X, Y]))
 
 
 def test_logical_if():
@@ -99,13 +99,13 @@ def test_logical_if():
     ], dtype=np.float32)
 
     expected = np.where(if_points[:, 0] > 0.5, if_points[:, 1], if_points[:, 2])
-    result = evaluate(if_expr, if_points)
+    result = evaluate(if_expr, if_points, [X, Y, Z])
     np.testing.assert_allclose(result, expected)
 
     # Test with constant values
     if_expr_const = logical_if(condition, 100.0, 200.0)
     expected_const = np.where(if_points[:, 0] > 0.5, 100.0, 200.0)
-    result_const = evaluate(if_expr_const, if_points)
+    result_const = evaluate(if_expr_const, if_points[:, [0]], [X])
     np.testing.assert_allclose(result_const, expected_const)
 
 

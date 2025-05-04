@@ -48,12 +48,31 @@ def repeat(expr, px, py, pz):
         if isinstance(period, (int, float)) and period < 0:
             raise ValueError(f"Period for {axis}-axis must be non-negative")
 
-    x, y, z = fp.x(), fp.y(), fp.z()
+    # Determine which variables are needed based on repetition periods
+    need_x = px != 0
+    need_y = py != 0
+    need_z = pz != 0
 
-    # Handle each axis - if period is 0, use the original coordinate
-    mx = x if px == 0 else (x - px * floor(x / px + 0.5))
-    my = y if py == 0 else (y - py * floor(y / py + 0.5))
-    mz = z if pz == 0 else (z - pz * floor(z / pz + 0.5))
+    # Only create variables that are needed for repetition
+    # If a period is 0, we don't need to create that variable
+    # since we'll use the identity mapping
+    x_var = fp.x() if need_x else None
+    y_var = fp.y() if need_y else None
+    z_var = fp.z() if need_z else None
+
+    # Apply the repetition formula only to variables we created
+    mx = x_var if not need_x else (x_var - px * floor(x_var / px + 0.5))
+    my = y_var if not need_y else (y_var - py * floor(y_var / py + 0.5))
+    mz = z_var if not need_z else (z_var - pz * floor(z_var / pz + 0.5))
+
+    # For axes that don't need repetition, use the identity map
+    # These won't introduce variables
+    if not need_x:
+        mx = fp.x()
+    if not need_y:
+        my = fp.y()
+    if not need_z:
+        mz = fp.z()
 
     return remap_xyz(expr, mx, my, mz)
 
@@ -93,12 +112,35 @@ def mirror(expr, mx=False, my=False, mz=False):
     if not hasattr(expr, '_is_sdf_expr'):
         raise TypeError("Argument must be an SDF expression")
 
-    x, y, z = fp.x(), fp.y(), fp.z()
-
-    new_x = abs(x) if mx else x
-    new_y = abs(y) if my else y
-    new_z = abs(z) if mz else z
-
+    # Create only the variables we actually need to mirror
+    # For variables we don't need, use a placeholder that
+    # passes through the original coordinate without causing
+    # variable creation
+    
+    # Determine which variables are needed based on mirror flags
+    need_x = mx
+    need_y = my
+    need_z = mz
+    
+    # Create original variables only if needed for mirroring
+    x_var = fp.x() if need_x else None
+    y_var = fp.y() if need_y else None
+    z_var = fp.z() if need_z else None
+    
+    # Apply transformations only on the variables we actually created
+    new_x = abs(x_var) if mx else None
+    new_y = abs(y_var) if my else None
+    new_z = abs(z_var) if mz else None
+    
+    # Build an identity mapping for coordinates we don't need to mirror
+    # These identities won't introduce new variables
+    if not need_x:
+        new_x = fp.x()  # Identity map for x
+    if not need_y:
+        new_y = fp.y()  # Identity map for y
+    if not need_z:
+        new_z = fp.z()  # Identity map for z
+        
     return remap_xyz(expr, new_x, new_y, new_z)
 
 def symmetry(expr, sx=False, sy=False, sz=False):

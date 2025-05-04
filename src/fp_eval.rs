@@ -17,6 +17,9 @@ use fidget::jit::{JitFloatSliceEval, JitFunction};
 use fidget::vm::{VmFloatSliceEval, VmFunction};
 
 use crate::fp_utils::parse_variable_list;
+use crate::fp_utils::get_required_var_names_from_vm;
+use crate::fp_context::PySDFContext; // Needed for to_vm
+use std::collections::HashSet;
 
 // Enum to accept either NumPy array or Python list for eval values
 #[derive(FromPyObject)]
@@ -278,9 +281,53 @@ pub fn eval_impl(
     let use_jit = determine_backend(backend)?;
 
     // Parse the input list of variable expressions
+    if variables_list.is_none() {
+        return Err(PyValueError::new_err("Please provide a list of variables for the expression."));
+    }
     let py_vars = parse_variable_list(variables_list)?;
     let rust_vars: Vec<Var> = py_vars.iter().map(|pv| pv.var.clone()).collect();
     let num_vars_expected = py_vars.len();
+    
+    // --- Validate Variable Mapping using VM ---
+    // Generate VM string
+    let mut ctx = PySDFContext::new();
+    let vm_str = ctx.to_vm(&sdf)?; // Use the PyExpr directly
+
+    // Get required variable names from VM string
+    let required_var_names = get_required_var_names_from_vm(&vm_str);
+
+    // Get provided variable names (use name if available, otherwise format Var)
+    let provided_var_names: HashSet<String> = py_vars.iter().map(|pv| {
+        pv.name.clone().unwrap_or_else(|| format!("{:?}", pv.var)) // Fallback to Var debug format if no name
+    }).collect();
+
+    // Check for missing variables
+    let missing_vars: Vec<String> = required_var_names
+        .difference(&provided_var_names)
+        .cloned()
+        .collect();
+
+    // Check for extra variables
+    let extra_vars: Vec<String> = provided_var_names
+        .difference(&required_var_names)
+        .cloned()
+        .collect();
+
+    // If there are either missing or unused variables, generate a combined error message
+    if !missing_vars.is_empty() || !extra_vars.is_empty() {
+        let mut error_message = String::from("Missing or unused variable(s) found in mapping:");
+        
+        if !missing_vars.is_empty() {
+            error_message.push_str(&format!("\nMissing: {}", missing_vars.join(", ")));
+        }
+        
+        if !extra_vars.is_empty() {
+            error_message.push_str(&format!("\nUnused: {}", extra_vars.join(", ")));
+        }
+        
+        return Err(PyValueError::new_err(error_message));
+    }
+    // --- End Validation ---
 
     // Process the input values (Array or List) and perform evaluation
     match values {
@@ -296,6 +343,8 @@ pub fn eval_impl(
                     num_vars_expected
                 )));
             }
+
+            // Validation is done early in the function
             // Evaluate directly using the borrowed view
             let result_vec = if use_jit {
                 _evaluate_bulk_jit(&sdf.tree, &values_view, &rust_vars)?
@@ -334,6 +383,8 @@ pub fn eval_impl(
                                 current_row_len,
                                 num_vars_expected
                             )));
+                            
+                            // Note: Validation is done early in the function
                         }
                         first_row_len = Some(current_row_len);
                     }

@@ -45,14 +45,41 @@ SAMPLE_VARS_LIST = SAMPLE_VARS_NP.tolist()
 CUSTOM_VARS_LIST = [X, Y, Z, A, B] # Order matches SAMPLE_VARS_NP columns
 
 def evaluate(expr, points=SAMPLE_POINTS_NP, variables=None):
-    """Helper to evaluate expressions, handling default/custom vars."""
+    """Helper to evaluate expressions, handling default/custom vars with strict validation."""
+    # Get the string representation of the expression to identify variables
+    expr_str = str(expr)
+    
+    # For expressions with only X
+    if "x" in expr_str and "y" not in expr_str and "z" not in expr_str:
+        if points.shape[1] >= 1:
+            return fp.eval(expr, points[:, 0:1], variables=[X])
+    
+    # For expressions with X and Y
+    elif "x" in expr_str and "y" in expr_str and "z" not in expr_str:
+        if points.shape[1] >= 2:
+            return fp.eval(expr, points[:, 0:2], variables=[X, Y])
+    
+    # For expressions with X, Y, and Z
+    elif "x" in expr_str and "y" in expr_str and "z" in expr_str:
+        if points.shape[1] >= 3:
+            return fp.eval(expr, points[:, 0:3], variables=[X, Y, Z])
+    
+    # For custom variables, use the provided variables
     if variables:
-        # Assume points includes values for custom vars if variables are provided
-        return fp.eval(expr, points, variables=variables) # Added return
-        return fp.eval(expr, points, variables=variables)
-    else:
-        # Default: evaluate using x, y, z from the points array
-        return fp.eval(expr, points) # Rely on default variables=[x,y,z]
+        # Extract only the columns needed for the provided variables
+        if "a" in expr_str and "b" in expr_str:
+            if points.shape[1] >= 5:  # Assuming a is at index 3, b at index 4
+                return fp.eval(expr, points[:, 3:5], variables=[A, B])
+        elif "a" in expr_str:
+            if points.shape[1] >= 4:  # Assuming a is at index 3
+                return fp.eval(expr, points[:, 3:4], variables=[A])
+        elif "b" in expr_str:
+            if points.shape[1] >= 5:  # Assuming b is at index 4
+                return fp.eval(expr, points[:, 4:5], variables=[B])
+    
+    # Default case - just pass the expression and points
+    # This will likely fail with validation errors, but that's expected for invalid cases
+    return fp.eval(expr, points, variables=variables)
 
 # --- Basic Variable/Constant Tests ---
 
@@ -63,17 +90,31 @@ def test_constant_evaluation():
     np.testing.assert_allclose(result, np.full(len(SAMPLE_POINTS_NP), 2.0))
 
 def test_variable_evaluation_default():
-    result_x = evaluate(X)
+    # Test each variable individually with strict validation
+    # Extract just the column for X to match strict validation
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    result_x = fp.eval(X, x_points, variables=[X])
     np.testing.assert_allclose(result_x, SAMPLE_POINTS_NP[:, 0])
-    result_y = evaluate(Y)
+    
+    # Extract just the column for Y to match strict validation
+    y_points = SAMPLE_POINTS_NP[:, 1:2]
+    result_y = fp.eval(Y, y_points, variables=[Y])
     np.testing.assert_allclose(result_y, SAMPLE_POINTS_NP[:, 1])
-    result_z = evaluate(Z)
+    
+    # Extract just the column for Z to match strict validation
+    z_points = SAMPLE_POINTS_NP[:, 2:3]
+    result_z = fp.eval(Z, z_points, variables=[Z])
     np.testing.assert_allclose(result_z, SAMPLE_POINTS_NP[:, 2])
 
 def test_variable_evaluation_custom():
-    result_a = evaluate(A, points=SAMPLE_VARS_NP, variables=CUSTOM_VARS_LIST)
+    # Extract just the column for 'a' to match strict validation
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    result_a = fp.eval(A, a_points, variables=[A])
     np.testing.assert_allclose(result_a, SAMPLE_VARS_NP[:, 3]) # Column for 'a'
-    result_b = evaluate(B, points=SAMPLE_VARS_NP, variables=CUSTOM_VARS_LIST)
+    
+    # Extract just the column for 'b' to match strict validation
+    b_points = SAMPLE_VARS_NP[:, 4:5]
+    result_b = fp.eval(B, b_points, variables=[B])
     np.testing.assert_allclose(result_b, SAMPLE_VARS_NP[:, 4]) # Column for 'b'
 
 # --- Operator Tests ---
@@ -86,100 +127,115 @@ def test_add_operator():
     # X + 1
     expr1 = X + C1
     expected1 = SAMPLE_POINTS_NP[:, 0] + 1.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # 1 + X
     expr2 = C1 + X
     expected2 = 1.0 + SAMPLE_POINTS_NP[:, 0]
-    np.testing.assert_allclose(evaluate(expr2), expected2)
+    np.testing.assert_allclose(fp.eval(expr2, x_points, variables=[X]), expected2)
 
     # X + Y
     expr3 = X + Y
     expected3 = SAMPLE_POINTS_NP[:, 0] + SAMPLE_POINTS_NP[:, 1]
-    np.testing.assert_allclose(evaluate(expr3), expected3)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr3, xy_points, variables=[X, Y]), expected3)
 
     # A + B (custom vars)
     expr4 = A + B
     expected4 = SAMPLE_VARS_NP[:, 3] + SAMPLE_VARS_NP[:, 4]
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
     # A + 1 (custom var + const)
     expr5 = A + C1
     expected5 = SAMPLE_VARS_NP[:, 3] + 1.0
-    np.testing.assert_allclose(evaluate(expr5, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected5)
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr5, a_points, variables=[A]), expected5)
 
 def test_subtract_operator():
     # X - 1
     expr1 = X - C1
     expected1 = SAMPLE_POINTS_NP[:, 0] - 1.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # 1 - X
     expr2 = C1 - X
     expected2 = 1.0 - SAMPLE_POINTS_NP[:, 0]
-    np.testing.assert_allclose(evaluate(expr2), expected2)
+    np.testing.assert_allclose(fp.eval(expr2, x_points, variables=[X]), expected2)
 
     # X - Y
     expr3 = X - Y
     expected3 = SAMPLE_POINTS_NP[:, 0] - SAMPLE_POINTS_NP[:, 1]
-    np.testing.assert_allclose(evaluate(expr3), expected3)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr3, xy_points, variables=[X, Y]), expected3)
 
     # A - B (custom vars)
     expr4 = A - B
     expected4 = SAMPLE_VARS_NP[:, 3] - SAMPLE_VARS_NP[:, 4]
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
 def test_multiply_operator():
     # X * 2
     expr1 = X * C2
     expected1 = SAMPLE_POINTS_NP[:, 0] * 2.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # 2 * X
     expr2 = C2 * X
     expected2 = 2.0 * SAMPLE_POINTS_NP[:, 0]
-    np.testing.assert_allclose(evaluate(expr2), expected2)
+    np.testing.assert_allclose(fp.eval(expr2, x_points, variables=[X]), expected2)
 
     # X * Y
     expr3 = X * Y
     expected3 = SAMPLE_POINTS_NP[:, 0] * SAMPLE_POINTS_NP[:, 1]
-    np.testing.assert_allclose(evaluate(expr3), expected3)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr3, xy_points, variables=[X, Y]), expected3)
 
     # A * B (custom vars)
     expr4 = A * B
     expected4 = SAMPLE_VARS_NP[:, 3] * SAMPLE_VARS_NP[:, 4]
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
 def test_divide_operator():
     # X / 2
     expr1 = X / C2
     expected1 = SAMPLE_POINTS_NP[:, 0] / 2.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # 2 / X (handle potential division by zero)
     expr2 = C2 / X
     points = SAMPLE_POINTS_NP.copy()
     points[points[:, 0] == 0, 0] = 1e-9 # Avoid exact zero for testing division
     expected2 = 2.0 / points[:, 0]
-    np.testing.assert_allclose(evaluate(expr2, points), expected2, atol=1e-6) # Relax tolerance
+    x_points = points[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr2, x_points, variables=[X]), expected2, atol=1e-6) # Relax tolerance
 
     # X / Y (handle potential division by zero)
     expr3 = X / Y
     points = SAMPLE_POINTS_NP.copy()
     points[points[:, 1] == 0, 1] = 1e-9 # Avoid exact zero
     expected3 = points[:, 0] / points[:, 1]
-    np.testing.assert_allclose(evaluate(expr3, points), expected3, atol=1e-6)
+    xy_points = points[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr3, xy_points, variables=[X, Y]), expected3, atol=1e-6)
 
     # A / B (custom vars)
     expr4 = A / B
     expected4 = SAMPLE_VARS_NP[:, 3] / SAMPLE_VARS_NP[:, 4] # Assumes B is not zero in samples
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
 def test_power_operator():
     # X ** 2 (integer exponent)
     expr1 = X ** 2 # Use integer literal
     expected1 = SAMPLE_POINTS_NP[:, 0] ** 2.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # X ** 0.5 (sqrt)
     expr2 = X ** 0.5
@@ -188,47 +244,55 @@ def test_power_operator():
     non_negative_mask = points[:, 0] >= 0
     points_to_eval = points[non_negative_mask]
     expected2 = np.sqrt(points_to_eval[:, 0])
-    result2 = evaluate(expr2, points_to_eval) # Evaluate only valid points
+    x_points = points_to_eval[:, 0:1]
+    result2 = fp.eval(expr2, x_points, variables=[X]) # Evaluate only valid points
     np.testing.assert_allclose(result2, expected2)
 
     # A ** B (custom vars)
     expr4 = A ** B
     expected4 = (SAMPLE_VARS_NP[:, 3] ** SAMPLE_VARS_NP[:, 4]).astype(np.float32) # Cast to f32
     # Increase tolerance slightly for f32 vs f64 power calculation
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4, rtol=1e-6)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4, rtol=1e-6)
 
 def test_modulo_operator():
     # X % 2
     expr1 = X % C2
     expected1 = SAMPLE_POINTS_NP[:, 0] % 2.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # A % B (custom vars)
     expr4 = A % B
     expected4 = SAMPLE_VARS_NP[:, 3] % SAMPLE_VARS_NP[:, 4]
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
 def test_floor_divide_operator():
     # X // 2
     expr1 = X // C2
     expected1 = SAMPLE_POINTS_NP[:, 0] // 2.0
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # A // B (custom vars)
     expr4 = A // B
     expected4 = SAMPLE_VARS_NP[:, 3] // SAMPLE_VARS_NP[:, 4]
-    np.testing.assert_allclose(evaluate(expr4, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected4)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr4, ab_points, variables=[A, B]), expected4)
 
 def test_negation_operator():
     # -X
     expr1 = -X
     expected1 = -SAMPLE_POINTS_NP[:, 0]
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr1, x_points, variables=[X]), expected1)
 
     # -A (custom var)
     expr2 = -A
     expected2 = -SAMPLE_VARS_NP[:, 3]
-    np.testing.assert_allclose(evaluate(expr2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected2)
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr2, a_points, variables=[A]), expected2)
 
 # Note: Python's & and | operators map to logical AND/OR in fidgetpy, not bitwise.
 # Fidget's logical ops return 1.0 for true, 0.0 for false.
@@ -236,78 +300,88 @@ def test_logical_and_operator():
     # (X > 0) & (Y > 0)
     expr1 = (X > 0.0) & (Y > 0.0)
     expected1 = ((SAMPLE_POINTS_NP[:, 0] > 0) & (SAMPLE_POINTS_NP[:, 1] > 0)).astype(float)
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr1, xy_points, variables=[X, Y]), expected1)
 
     # (A > 0) & (B > 0) (custom vars)
     expr2 = (A > 0.0) & (B > 0.0)
     expected2 = ((SAMPLE_VARS_NP[:, 3] > 0) & (SAMPLE_VARS_NP[:, 4] > 0)).astype(float)
-    np.testing.assert_allclose(evaluate(expr2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected2)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr2, ab_points, variables=[A, B]), expected2)
 
 def test_logical_or_operator():
     # (X < 0) | (Y < 0)
     expr1 = (X < 0.0) | (Y < 0.0)
     expected1 = ((SAMPLE_POINTS_NP[:, 0] < 0) | (SAMPLE_POINTS_NP[:, 1] < 0)).astype(float)
-    np.testing.assert_allclose(evaluate(expr1), expected1)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr1, xy_points, variables=[X, Y]), expected1)
 
      # (A < 0) | (B < 0) (custom vars)
     expr2 = (A < 0.0) | (B < 0.0)
     expected2 = ((SAMPLE_VARS_NP[:, 3] < 0) | (SAMPLE_VARS_NP[:, 4] < 0)).astype(float)
-    np.testing.assert_allclose(evaluate(expr2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected2)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr2, ab_points, variables=[A, B]), expected2)
 
 def test_comparison_operators():
     # ==
     expr_eq1 = X == C1
     expected_eq1 = (SAMPLE_POINTS_NP[:, 0] == 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_eq1), expected_eq1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr_eq1, x_points, variables=[X]), expected_eq1)
 
     expr_eq2 = A == 5.0
     expected_eq2 = (SAMPLE_VARS_NP[:, 3] == 5.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_eq2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_eq2)
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr_eq2, a_points, variables=[A]), expected_eq2)
 
     # !=
     expr_ne1 = X != C1
     expected_ne1 = (SAMPLE_POINTS_NP[:, 0] != 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_ne1), expected_ne1)
+    np.testing.assert_allclose(fp.eval(expr_ne1, x_points, variables=[X]), expected_ne1)
 
     expr_ne2 = A != B
     expected_ne2 = (SAMPLE_VARS_NP[:, 3] != SAMPLE_VARS_NP[:, 4]).astype(float)
-    np.testing.assert_allclose(evaluate(expr_ne2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_ne2)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr_ne2, ab_points, variables=[A, B]), expected_ne2)
 
     # <
     expr_lt1 = X < C1
     expected_lt1 = (SAMPLE_POINTS_NP[:, 0] < 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_lt1), expected_lt1)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr_lt1, x_points, variables=[X]), expected_lt1)
 
     expr_lt2 = A < B
     expected_lt2 = (SAMPLE_VARS_NP[:, 3] < SAMPLE_VARS_NP[:, 4]).astype(float)
-    np.testing.assert_allclose(evaluate(expr_lt2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_lt2)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr_lt2, ab_points, variables=[A, B]), expected_lt2)
 
     # <=
     expr_le1 = X <= C1
     expected_le1 = (SAMPLE_POINTS_NP[:, 0] <= 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_le1), expected_le1)
+    np.testing.assert_allclose(fp.eval(expr_le1, x_points, variables=[X]), expected_le1)
 
     expr_le2 = A <= 5.0
     expected_le2 = (SAMPLE_VARS_NP[:, 3] <= 5.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_le2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_le2)
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr_le2, a_points, variables=[A]), expected_le2)
 
     # >
     expr_gt1 = X > C1
     expected_gt1 = (SAMPLE_POINTS_NP[:, 0] > 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_gt1), expected_gt1)
+    np.testing.assert_allclose(fp.eval(expr_gt1, x_points, variables=[X]), expected_gt1)
 
     expr_gt2 = A > B
     expected_gt2 = (SAMPLE_VARS_NP[:, 3] > SAMPLE_VARS_NP[:, 4]).astype(float)
-    np.testing.assert_allclose(evaluate(expr_gt2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_gt2)
+    np.testing.assert_allclose(fp.eval(expr_gt2, ab_points, variables=[A, B]), expected_gt2)
 
     # >=
     expr_ge1 = X >= C1
     expected_ge1 = (SAMPLE_POINTS_NP[:, 0] >= 1.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_ge1), expected_ge1)
+    np.testing.assert_allclose(fp.eval(expr_ge1, x_points, variables=[X]), expected_ge1)
 
     expr_ge2 = A >= 5.0
     expected_ge2 = (SAMPLE_VARS_NP[:, 3] >= 5.0).astype(float)
-    np.testing.assert_allclose(evaluate(expr_ge2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_ge2)
+    np.testing.assert_allclose(fp.eval(expr_ge2, a_points, variables=[A]), expected_ge2)
 
 
 # --- Method Tests ---
@@ -431,7 +505,8 @@ def test_unary_methods():
     # Test one method with a custom variable
     expr_abs_a = A.abs()
     expected_abs_a = np.abs(vars_data[:, 3])
-    np.testing.assert_allclose(evaluate(expr_abs_a, vars_data, CUSTOM_VARS_LIST), expected_abs_a)
+    a_points = vars_data[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr_abs_a, a_points, variables=[A]), expected_abs_a)
 
 
 # Tests for methods: sqrt, sin, cos, abs, max, min, square, floor, ceil, round,
@@ -453,16 +528,19 @@ def test_binary_methods():
     # A.max(B) (custom vars)
     expr3 = A.max(B)
     expected3 = np.maximum(SAMPLE_VARS_NP[:, 3], SAMPLE_VARS_NP[:, 4])
-    np.testing.assert_allclose(evaluate(expr3, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected3)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr3, ab_points, variables=[A, B]), expected3)
 
     # min
     expr_min1 = X.min(Y)
     expected_min1 = np.minimum(SAMPLE_POINTS_NP[:, 0], SAMPLE_POINTS_NP[:, 1])
-    np.testing.assert_allclose(evaluate(expr_min1), expected_min1)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr_min1, xy_points, variables=[X, Y]), expected_min1)
 
     expr_min2 = A.min(C1)
     expected_min2 = np.minimum(SAMPLE_VARS_NP[:, 3], 1.0)
-    np.testing.assert_allclose(evaluate(expr_min2, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_min2)
+    a_points = SAMPLE_VARS_NP[:, 3:4]
+    np.testing.assert_allclose(fp.eval(expr_min2, a_points, variables=[A]), expected_min2)
 
     # compare (1.0 if self > other, -1.0 if self < other, 0.0 if equal)
     expr_cmp1 = X.compare(Y)
@@ -520,24 +598,27 @@ def test_fpm_binary_functions():
     # fpm.max
     expr_max1 = fpm.max(X, Y)
     expected_max1 = np.maximum(SAMPLE_POINTS_NP[:, 0], SAMPLE_POINTS_NP[:, 1])
-    np.testing.assert_allclose(evaluate(expr_max1), expected_max1)
+    xy_points = SAMPLE_POINTS_NP[:, 0:2]
+    np.testing.assert_allclose(fp.eval(expr_max1, xy_points, variables=[X, Y]), expected_max1)
 
     expr_max2 = fpm.max(X, 1.0) # Test with float
     expected_max2 = np.maximum(SAMPLE_POINTS_NP[:, 0], 1.0)
-    np.testing.assert_allclose(evaluate(expr_max2), expected_max2)
+    x_points = SAMPLE_POINTS_NP[:, 0:1]
+    np.testing.assert_allclose(fp.eval(expr_max2, x_points, variables=[X]), expected_max2)
 
     expr_max3 = fpm.max(A, B) # Test with custom vars
     expected_max3 = np.maximum(SAMPLE_VARS_NP[:, 3], SAMPLE_VARS_NP[:, 4])
-    np.testing.assert_allclose(evaluate(expr_max3, SAMPLE_VARS_NP, CUSTOM_VARS_LIST), expected_max3)
+    ab_points = SAMPLE_VARS_NP[:, 3:5]
+    np.testing.assert_allclose(fp.eval(expr_max3, ab_points, variables=[A, B]), expected_max3)
 
     # fpm.min
     expr_min1 = fpm.min(X, Y)
     expected_min1 = np.minimum(SAMPLE_POINTS_NP[:, 0], SAMPLE_POINTS_NP[:, 1])
-    np.testing.assert_allclose(evaluate(expr_min1), expected_min1)
+    np.testing.assert_allclose(fp.eval(expr_min1, xy_points, variables=[X, Y]), expected_min1)
 
     expr_min2 = fpm.min(X, C1) # Test with constant expr
     expected_min2 = np.minimum(SAMPLE_POINTS_NP[:, 0], 1.0)
-    np.testing.assert_allclose(evaluate(expr_min2), expected_min2)
+    np.testing.assert_allclose(fp.eval(expr_min2, x_points, variables=[X]), expected_min2)
 
     # fpm.atan2
     expr_atan2 = fpm.atan2(Y, X) # atan2(y, x)
@@ -562,10 +643,10 @@ def test_remap_xyz():
     # Remap X to A, Y to B, Z to C1 (custom vars)
     expr_custom = X + Y * 2.0
     remapped_custom = expr_custom.remap_xyz(A, B, C1)
-    # Evaluate at (x,y,z,a,b) = (0,0,0,5,10) -> like original at (a,b,c1) = (5,10,1)
+    # Evaluate at (a,b) = (5,10) -> like original at (a,b,c1) = (5,10,1)
     # Original at (5, 10, 1) = 5 + 10*2 = 25
-    var_point = np.array([[0.0, 0.0, 0.0, 5.0, 10.0]], dtype=np.float32)
-    result_custom = evaluate(remapped_custom, var_point, CUSTOM_VARS_LIST)
+    ab_point = np.array([[5.0, 10.0]], dtype=np.float32)
+    result_custom = fp.eval(remapped_custom, ab_point, variables=[A, B])
     np.testing.assert_allclose(result_custom, [25.0])
 
 def test_remap_affine():

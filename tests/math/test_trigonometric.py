@@ -40,20 +40,20 @@ def test_sin_cos_tan():
     # sin
     expr_sin = fpm.sin(X)
     expected_sin = np.sin(points_for_trig[:, 0])
-    np.testing.assert_allclose(evaluate(expr_sin, points_for_trig), expected_sin)
+    np.testing.assert_allclose(evaluate(expr_sin, points_for_trig[:, [0]], [X]), expected_sin)
     
     # Also test as a method
     expr_sin_method = X.sin()
-    np.testing.assert_allclose(evaluate(expr_sin_method, points_for_trig), expected_sin)
+    np.testing.assert_allclose(evaluate(expr_sin_method, points_for_trig[:, [0]], [X]), expected_sin)
     
     # cos
     expr_cos = fpm.cos(X)
     expected_cos = np.cos(points_for_trig[:, 0])
-    np.testing.assert_allclose(evaluate(expr_cos, points_for_trig), expected_cos)
+    np.testing.assert_allclose(evaluate(expr_cos, points_for_trig[:, [0]], [X]), expected_cos)
     
     # Also test as a method
     expr_cos_method = X.cos()
-    np.testing.assert_allclose(evaluate(expr_cos_method, points_for_trig), expected_cos)
+    np.testing.assert_allclose(evaluate(expr_cos_method, points_for_trig[:, [0]], [X]), expected_cos)
     
     # tan (avoid points where cos is zero)
     points_for_tan = points_for_trig.copy()
@@ -61,11 +61,11 @@ def test_sin_cos_tan():
     points_for_tan[np.abs(np.cos(points_for_tan[:, 0])) < 1e-6, 0] += 0.1
     expr_tan = fpm.tan(X)
     expected_tan = np.tan(points_for_tan[:, 0])
-    np.testing.assert_allclose(evaluate(expr_tan, points_for_tan), expected_tan, atol=1e-6)
+    np.testing.assert_allclose(evaluate(expr_tan, points_for_tan[:, [0]], [X]), expected_tan, atol=1e-6)
     
     # Also test as a method
     expr_tan_method = X.tan()
-    np.testing.assert_allclose(evaluate(expr_tan_method, points_for_tan), expected_tan, atol=1e-6)
+    np.testing.assert_allclose(evaluate(expr_tan_method, points_for_tan[:, [0]], [X]), expected_tan, atol=1e-6)
 
 def test_asin_acos():
     """Test arc sine and arc cosine functions."""
@@ -74,31 +74,31 @@ def test_asin_acos():
     points_scaled_01[:, 0] = points_scaled_01[:, 0] * 0.5  # Scale x to [-0.5, 0.5]
     expr_asin = fpm.asin(X)
     expected_asin = np.arcsin(points_scaled_01[:, 0])
-    np.testing.assert_allclose(evaluate(expr_asin, points_scaled_01), expected_asin)
+    np.testing.assert_allclose(evaluate(expr_asin, points_scaled_01[:, [0]], [X]), expected_asin)
     
     # Also test as a method
     expr_asin_method = X.asin()
-    np.testing.assert_allclose(evaluate(expr_asin_method, points_scaled_01), expected_asin)
+    np.testing.assert_allclose(evaluate(expr_asin_method, points_scaled_01[:, [0]], [X]), expected_asin)
     
     # acos (input must be between -1 and 1)
     expr_acos = fpm.acos(X)
     expected_acos = np.arccos(points_scaled_01[:, 0])
-    np.testing.assert_allclose(evaluate(expr_acos, points_scaled_01), expected_acos)
+    np.testing.assert_allclose(evaluate(expr_acos, points_scaled_01[:, [0]], [X]), expected_acos)
     
     # Also test as a method
     expr_acos_method = X.acos()
-    np.testing.assert_allclose(evaluate(expr_acos_method, points_scaled_01), expected_acos)
+    np.testing.assert_allclose(evaluate(expr_acos_method, points_scaled_01[:, [0]], [X]), expected_acos)
 
 def test_atan_atan2():
     """Test arc tangent functions."""
     # atan
     expr_atan = fpm.atan(X)
     expected_atan = np.arctan(SAMPLE_POINTS_NP[:, 0])
-    np.testing.assert_allclose(evaluate(expr_atan), expected_atan)
+    np.testing.assert_allclose(evaluate(expr_atan, SAMPLE_POINTS_NP[:, [0]], [X]), expected_atan)
     
     # Also test as a method
     expr_atan_method = X.atan()
-    np.testing.assert_allclose(evaluate(expr_atan_method), expected_atan)
+    np.testing.assert_allclose(evaluate(expr_atan_method, SAMPLE_POINTS_NP[:, [0]], [X]), expected_atan)
     
     # atan2
     expr_atan2 = fpm.atan2(Y, X)
@@ -106,11 +106,11 @@ def test_atan_atan2():
     # Avoid (0, 0) case for atan2
     points_nonzero[(points_nonzero[:, 0] == 0) & (points_nonzero[:, 1] == 0), 0] = 1e-9
     expected_atan2 = np.arctan2(points_nonzero[:, 1], points_nonzero[:, 0])
-    np.testing.assert_allclose(evaluate(expr_atan2, points_nonzero), expected_atan2, atol=1e-6)
+    np.testing.assert_allclose(evaluate(expr_atan2, points_nonzero[:, [0, 1]], [X, Y]), expected_atan2, atol=1e-6)
     
     # Also test as a method
     expr_atan2_method = Y.atan2(X)
-    np.testing.assert_allclose(evaluate(expr_atan2_method, points_nonzero), expected_atan2, atol=1e-6)
+    np.testing.assert_allclose(evaluate(expr_atan2_method, points_nonzero[:, [0, 1]], [X, Y]), expected_atan2, atol=1e-6)
 
 def test_trig_errors():
     """Test error handling for trigonometric functions."""

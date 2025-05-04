@@ -169,6 +169,38 @@ impl PyExpr {
         }
     }
 
+    pub fn add(&self, other: SdfVarOrFloat) -> Self {
+        let (other_tree, other_names) = get_tree_and_names_from_other(other);
+        PyExpr { 
+            tree: self.tree.clone() + other_tree, 
+            var_names: merge_maps(&self.var_names, &other_names) 
+        }
+    }
+
+    pub fn sub(&self, other: SdfVarOrFloat) -> Self {
+        let (other_tree, other_names) = get_tree_and_names_from_other(other);
+        PyExpr { 
+            tree: self.tree.clone() - other_tree, 
+            var_names: merge_maps(&self.var_names, &other_names) 
+        }
+    }
+
+    pub fn mul(&self, other: SdfVarOrFloat) -> Self {
+        let (other_tree, other_names) = get_tree_and_names_from_other(other);
+        PyExpr { 
+            tree: self.tree.clone() * other_tree, 
+            var_names: merge_maps(&self.var_names, &other_names) 
+        }
+    }
+
+    pub fn div(&self, other: SdfVarOrFloat) -> Self {
+        let (other_tree, other_names) = get_tree_and_names_from_other(other);
+        PyExpr { 
+            tree: self.tree.clone() / other_tree, 
+            var_names: merge_maps(&self.var_names, &other_names) 
+        }
+    }
+
     /// Returns the negation of this expression
     pub fn neg(&self) -> Self {
         PyExpr { tree: self.tree.neg(), var_names: self.var_names.clone() }

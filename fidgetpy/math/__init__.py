@@ -13,7 +13,9 @@ This module provides mathematical operations for SDF expressions, including:
 
 # Import everything from each module with * to avoid having module references
 from .basic_math import (
-    min, max, clamp, abs, sign, floor, ceil, round, fract, mod, pow, sqrt, exp, ln
+    add, sub, mul, div, min, max,
+    clamp, abs, sign, floor, ceil, round,
+    fract, mod, pow, sqrt, exp, ln
 )
 
 from .trigonometry import (
@@ -21,16 +23,12 @@ from .trigonometry import (
 )
 
 from .vector_math import (
-    length, distance, dot, dot2, ndot, cross, normalize,
-    length_2d, distance_2d, dot_2d, dot2_2d, ndot_2d, normalize_2d,
-    length_3d, distance_3d, dot_3d, dot2_3d, cross_3d, normalize_3d
+    length, distance, dot, dot2, ndot, cross, normalize
 )
 
 from .transformations import (
     translate, rotate, scale,
-    remap_xyz, remap_affine, combine_matrices,
-    make_translation_matrix, make_scaling_matrix,
-    make_rotation_x_matrix, make_rotation_y_matrix, make_rotation_z_matrix
+    remap_xyz, remap_affine
 )
 
 from .domain_manipulation import (
@@ -50,7 +48,8 @@ from .logical import (
 # Define __all__ to control what gets imported with "from fidgetpy.math import *"
 __all__ = [
     # Basic Math Functions
-    'min', 'max', 'clamp', 'abs', 'sign', 'floor', 'ceil', 'round',
+    'add', 'sub', 'mul', 'div', 'min', 'max',
+    'clamp', 'abs', 'sign', 'floor', 'ceil', 'round',
     'fract', 'mod', 'pow', 'sqrt', 'exp', 'ln',
     
     # Trigonometric Functions
@@ -58,16 +57,10 @@ __all__ = [
     
     # Vector Math
     'length', 'distance', 'dot', 'dot2', 'ndot', 'cross', 'normalize',
-    'length_2d', 'distance_2d', 'dot_2d', 'dot2_2d', 'ndot_2d', 'normalize_2d',
-    'length_3d', 'distance_3d', 'dot_3d', 'dot2_3d', 'cross_3d', 'normalize_3d',
     
     # Transformations
     'translate', 'rotate', 'scale',
     'remap_xyz', 'remap_affine', 'combine_matrices',
-    
-    # Affine Matrix Helpers
-    'make_translation_matrix', 'make_scaling_matrix',
-    'make_rotation_x_matrix', 'make_rotation_y_matrix', 'make_rotation_z_matrix',
     
     # Domain Manipulation
     'repeat', 'mirror', 'symmetry'

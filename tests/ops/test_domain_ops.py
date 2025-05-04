@@ -32,10 +32,10 @@ def test_onion():
     sphere, points = setup_test_shapes()
     thickness = 0.1
     onion_sdf = fpo.onion(sphere, thickness)
-    result = fp.eval(onion_sdf, points)
+    result = fp.eval(onion_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Onion should be the absolute value minus thickness
-    sphere_values = fp.eval(sphere, points)
+    sphere_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
     expected = np.abs(sphere_values) - thickness
     
     np.testing.assert_allclose(result, expected, rtol=1e-5)
@@ -51,7 +51,7 @@ def test_mirror_x():
         [0.5, 0.3, 0.2]  # Same but with positive x
     ], dtype=np.float32)
     
-    result = fp.eval(mirrored_sdf, mirror_test_points)
+    result = fp.eval(mirrored_sdf, mirror_test_points, [fp.x(), fp.y(), fp.z()])
     
     # Both points should give the same result after mirroring
     assert result[0] == pytest.approx(result[1], rel=1e-5)
@@ -67,7 +67,7 @@ def test_mirror_y():
         [0.3, 0.5, 0.2]  # Same but with positive y
     ], dtype=np.float32)
     
-    result = fp.eval(mirrored_sdf, mirror_test_points)
+    result = fp.eval(mirrored_sdf, mirror_test_points, [fp.x(), fp.y(), fp.z()])
     
     # Both points should give the same result after mirroring
     assert result[0] == pytest.approx(result[1], rel=1e-5)
@@ -83,7 +83,7 @@ def test_mirror_z():
         [0.3, 0.2, 0.5]  # Same but with positive z
     ], dtype=np.float32)
     
-    result = fp.eval(mirrored_sdf, mirror_test_points)
+    result = fp.eval(mirrored_sdf, mirror_test_points, [fp.x(), fp.y(), fp.z()])
     
     # Both points should give the same result after mirroring
     assert result[0] == pytest.approx(result[1], rel=1e-5)
@@ -94,15 +94,15 @@ def test_elongate():
     
     # Elongate along z-axis
     elongate_sdf = fpo.elongate(sphere, (0.0, 0.0, 1.0))
-    result = fp.eval(elongate_sdf, points)
+    result = fp.eval(elongate_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Check that elongating by zero gives the original shape
     no_elongate_sdf = fpo.elongate(sphere, (0.0, 0.0, 0.0))
-    original_values = fp.eval(sphere, points)
-    no_elongate_values = fp.eval(no_elongate_sdf, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    no_elongate_values = fp.eval(no_elongate_sdf, points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(original_values, no_elongate_values, rtol=1e-5)
 
 def test_twist():
@@ -111,15 +111,15 @@ def test_twist():
     
     # Twist around the z-axis
     twist_sdf = fpo.twist(sphere, 1.0)
-    result = fp.eval(twist_sdf, points)
+    result = fp.eval(twist_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Check that twisting by zero gives the original shape
     no_twist_sdf = fpo.twist(sphere, 0.0)
-    original_values = fp.eval(sphere, points)
-    no_twist_values = fp.eval(no_twist_sdf, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    no_twist_values = fp.eval(no_twist_sdf, points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(original_values, no_twist_values, rtol=1e-5)
 
 def test_bend():
@@ -128,15 +128,15 @@ def test_bend():
     
     # Bend along the x-axis
     bend_sdf = fpo.bend(sphere, 1.0)
-    result = fp.eval(bend_sdf, points)
+    result = fp.eval(bend_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Check that bending by zero gives the original shape
     no_bend_sdf = fpo.bend(sphere, 0.0)
-    original_values = fp.eval(sphere, points)
-    no_bend_values = fp.eval(no_bend_sdf, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    no_bend_values = fp.eval(no_bend_sdf, points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(original_values, no_bend_values, rtol=1e-5)
 
 def test_round():
@@ -146,13 +146,13 @@ def test_round():
     # Round the shape
     radius = 0.1
     rounded_sdf = fpo.round(sphere, radius)
-    result = fp.eval(rounded_sdf, points)
+    result = fp.eval(rounded_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Rounding should decrease the distance by the radius
-    original_values = fp.eval(sphere, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
     expected = original_values - radius
     np.testing.assert_allclose(result, expected, rtol=1e-5)
 
@@ -163,14 +163,14 @@ def test_shell():
     # Create shell of the shape
     thickness = 0.1
     shell_sdf = fpo.shell(sphere, thickness)
-    result = fp.eval(shell_sdf, points)
+    result = fp.eval(shell_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Shell should be the absolute value minus thickness
     # Similar to onion in this case of a sphere
-    original_values = fp.eval(sphere, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
     expected = np.abs(original_values) - thickness
     np.testing.assert_allclose(result, expected, rtol=1e-5)
 
@@ -184,13 +184,13 @@ def test_displace():
     
     # Apply displacement
     displaced_sdf = fpo.displace(sphere, displacement)
-    result = fp.eval(displaced_sdf, points)
+    result = fp.eval(displaced_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
     
     # Zero displacement should give the original shape
     no_displace_sdf = fpo.displace(sphere, 0.0)
-    original_values = fp.eval(sphere, points)
-    no_displace_values = fp.eval(no_displace_sdf, points)
+    original_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    no_displace_values = fp.eval(no_displace_sdf, points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(original_values, no_displace_values, rtol=1e-5)

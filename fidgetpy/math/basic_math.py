@@ -14,6 +14,167 @@ import builtins
 import math as py_math
 import fidgetpy as fp
 
+def add(a, b):
+    """
+    Returns the addition of a and b.
+    
+    This function returns the addition of two values.
+    
+    Args:
+        a: First value (number or SDF expression)
+        b: Second value (number or SDF expression)
+        
+    Returns:
+        The addition value of a and b
+        
+    Raises:
+        TypeError: If inputs are not numeric or SDF expressions
+        
+    Examples:
+        # Addition of two numbers
+        result = fpm.add(5.0, 10.0)  # Returns 15.0
+        
+        # Addition of expression and variable
+        sphere = fp.shape.sphere(1.0)
+        added_expr = fpm.add(sphere, fp.x())
+        
+    Can be used as either:
+    - fpm.add(a, b)
+    - a.add(b) (via extension)
+    """
+    if hasattr(a, '_is_sdf_expr') and hasattr(a, 'add'):
+        return a.add(b)
+    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'add'):
+        # If 'a' is not SDF but 'b' is, call b.add(a)
+        return b.add(a)
+    elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a + b
+    else:
+        # Raise error if types are incompatible and not SDF expressions
+        raise TypeError("add requires numeric inputs or SDF expressions")
+
+
+def sub(a, b):
+    """
+    Returns the subtraction of a and b.
+    
+    This function returns the subtraction of two values.
+    
+    Args:
+        a: First value (number or SDF expression)
+        b: Second value (number or SDF expression)
+        
+    Returns:
+        The subtraction value of a and b
+        
+    Raises:
+        TypeError: If inputs are not numeric or SDF expressions
+        
+    Examples:
+        # Subtraction of two numbers
+        result = fpm.sub(5.0, 10.0)  # Returns -5.0
+        
+        # Subtraction of expression and variable
+        sphere = fp.shape.sphere(1.0)
+        sub_expr = fpm.sub(sphere, fp.x())
+        
+    Can be used as either:
+    - fpm.sub(a, b)
+    - a.sub(b) (via extension)
+    """
+    if hasattr(a, '_is_sdf_expr') and hasattr(a, 'sub'):
+        return a.sub(b)
+    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'sub'):
+        # If 'a' is not SDF but 'b' is, call b.sub(a)
+        return b.sub(a)
+    elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a - b
+    else:
+        # Raise error if types are incompatible and not SDF expressions
+        raise TypeError("sub requires numeric inputs or SDF expressions")
+
+
+def mul(a, b):
+    """
+    Returns the multiplication of a and b.
+    
+    This function returns the multiplication of two values.
+    
+    Args:
+        a: First value (number or SDF expression)
+        b: Second value (number or SDF expression)
+        
+    Returns:
+        The multiplication value of a and b
+        
+    Raises:
+        TypeError: If inputs are not numeric or SDF expressions
+        
+    Examples:
+        # Multiplication of two numbers
+        result = fpm.mul(5.0, 10.0)  # Returns -5.0
+        
+        # Multiplication of expression and variable
+        sphere = fp.shape.sphere(1.0)
+        mul_expr = fpm.mul(sphere, fp.x())
+        
+    Can be used as either:
+    - fpm.mul(a, b)
+    - a.mul(b) (via extension)
+    """
+    if hasattr(a, '_is_sdf_expr') and hasattr(a, 'mul'):
+        return a.mul(b)
+    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'mul'):
+        # If 'a' is not SDF but 'b' is, call b.mul(a)
+        return b.mul(a)
+    elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a * b
+    else:
+        # Raise error if types are incompatible and not SDF expressions
+        raise TypeError("mul requires numeric inputs or SDF expressions")
+
+
+
+def div(a, b):
+    """
+    Returns the division of a and b.
+    
+    This function returns the division of two values.
+    
+    Args:
+        a: First value (number or SDF expression)
+        b: Second value (number or SDF expression)
+        
+    Returns:
+        The division value of a and b
+        
+    Raises:
+        TypeError: If inputs are not numeric or SDF expressions
+        
+    Examples:
+        # Division of two numbers
+        result = fpm.div(5.0, 10.0)  # Returns -5.0
+        
+        # Division of expression and variable
+        sphere = fp.shape.sphere(1.0)
+        div_expr = fpm.div(sphere, fp.x())
+        
+    Can be used as either:
+    - fpm.div(a, b)
+    - a.div(b) (via extension)
+    """
+    if hasattr(a, '_is_sdf_expr') and hasattr(a, 'div'):
+        return a.div(b)
+    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'div'):
+        # If 'a' is not SDF but 'b' is, call b.div(a)
+        return b.div(a)
+    elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a / b
+    else:
+        # Raise error if types are incompatible and not SDF expressions
+        raise TypeError("div requires numeric inputs or SDF expressions")
+
+
 def min(a, b):
     """
     Returns the minimum of a and b.

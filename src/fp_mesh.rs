@@ -18,6 +18,9 @@ use std::collections::HashMap;
 
 use crate::fp_expr::PyExpr;
 use crate::fp_utils::{check_for_custom_vars, parse_variable_list};
+use crate::fp_utils::get_required_var_names_from_vm;
+use crate::fp_context::PySDFContext; // Needed for to_vm
+use std::collections::HashSet;
 
 
 /// Python class representing a mesh
@@ -76,6 +79,56 @@ pub fn mesh_impl(
         
         // Parse the variables and values
         let py_vars = parse_variable_list(variables)?;
+// --- Validate Variable Mapping using VM (before substitution) ---
+        // Generate VM string from the original expression
+        let mut ctx_vm = PySDFContext::new();
+        let vm_str = ctx_vm.to_vm(sdf)?; // Use the original PyExpr
+
+        // Get required variable names from VM string
+        let mut required_var_names = get_required_var_names_from_vm(&vm_str);
+
+        // Get provided variable names (use name if available, otherwise format Var)
+        // Note: We use py_vars here which is defined just above
+        let mut provided_var_names: HashSet<String> = py_vars.iter().map(|pv| {
+            pv.name.clone().unwrap_or_else(|| format!("{:?}", pv.var)) // Fallback to Var debug format if no name
+        }).collect();
+
+        // Ignore x, y, z for meshing validation
+        required_var_names.remove("x");
+        required_var_names.remove("y");
+        required_var_names.remove("z");
+        provided_var_names.remove("x");
+        provided_var_names.remove("y");
+        provided_var_names.remove("z");
+
+        // Check for missing variables (excluding x, y, z)
+        let missing_vars: Vec<String> = required_var_names
+            .difference(&provided_var_names)
+            .cloned()
+            .collect();
+
+        // Check for extra variables (excluding x, y, z)
+        let extra_vars: Vec<String> = provided_var_names
+            .difference(&required_var_names)
+            .cloned()
+            .collect();
+
+        // If there are either missing or unused variables, generate a combined error message
+        if !missing_vars.is_empty() || !extra_vars.is_empty() {
+            let mut error_message = String::from("Missing or unused variable(s) found in mapping:");
+            
+            if !missing_vars.is_empty() {
+                error_message.push_str(&format!("\nMissing: {}", missing_vars.join(", ")));
+            }
+            
+            if !extra_vars.is_empty() {
+                error_message.push_str(&format!("\nUnused: {}", extra_vars.join(", ")));
+            }
+            
+            return Err(PyValueError::new_err(error_message));
+        }
+        // --- End Validation ---
+
         let rust_vars: Vec<Var> = py_vars.iter().map(|pv| pv.var.clone()).collect();
         
         // Extract values from the variable_values list

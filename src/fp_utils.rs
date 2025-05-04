@@ -2,6 +2,7 @@
 // Utility functions for SDF expressions
 
 use pyo3::prelude::*;
+use std::collections::HashSet;
 use pyo3::types::PyList; // Added
 use pyo3::exceptions::PyTypeError; // Added
 use fidget::context::{Tree, TreeOp, BinaryOpcode, UnaryOpcode};
@@ -51,6 +52,20 @@ pub fn merge_maps(map1: &HashMap<Var, String>, map2: &HashMap<Var, String>) -> H
     merged
 }
 
+/// Extracts the set of required variable names from a VM string representation.
+/// Parses lines like "_0 var-x" or "_1 var-my_custom_var".
+pub fn get_required_var_names_from_vm(vm_str: &str) -> HashSet<String> {
+    let mut required_vars = HashSet::new();
+    for line in vm_str.lines() {
+        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        if parts.len() >= 2 && parts[0].starts_with('_') && parts[1].starts_with("var-") {
+            if let Some(var_name) = parts[1].strip_prefix("var-") {
+                required_vars.insert(var_name.to_string());
+            }
+        }
+    }
+    required_vars
+}
 /// Check if an expression contains custom (non x,y,z) variables
 pub fn check_for_custom_vars(op: &TreeOp) -> bool {
     match op {

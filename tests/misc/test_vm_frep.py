@@ -35,12 +35,12 @@ class TestVMFRep(unittest.TestCase):
         # Verify that the expression still evaluates correctly by checking points
         # Point inside the shape should have negative SDF value
         inside_point = [0.0, 0.0, 0.0]  # origin should be inside
-        val = fp.eval(shape, [inside_point])[0]
+        val = fp.eval(shape, [inside_point], [x, y, z])[0]
         self.assertLess(val, 0, f"Expected negative SDF value for point inside shape, got {val}")
         
         # Point far outside the shape should have positive SDF value
         outside_point = [2.0, 2.0, 2.0]  # far from the shape
-        val = fp.eval(shape, [outside_point])[0]
+        val = fp.eval(shape, [outside_point], [x, y, z])[0]
         self.assertGreater(val, 0, f"Expected positive SDF value for point far outside shape, got {val}")
 
     def test_complex_expressions(self):

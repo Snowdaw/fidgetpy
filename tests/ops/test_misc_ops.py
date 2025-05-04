@@ -31,7 +31,7 @@ def test_chamfer_union():
     sphere, cube, points = setup_test_shapes()
     # Just verify it runs without errors
     chamfer_union_sdf = fpo.chamfer_union(sphere, cube, 0.2)
-    result = fp.eval(chamfer_union_sdf, points)
+    result = fp.eval(chamfer_union_sdf, points, [fp.x(), fp.y(), fp.z()])
     assert len(result) == len(points)
         
 def test_engrave():
@@ -39,11 +39,11 @@ def test_engrave():
     sphere, cube, points = setup_test_shapes()
     depth = 0.1
     engrave_sdf = fpo.engrave(sphere, cube, depth)
-    result = fp.eval(engrave_sdf, points)
+    result = fp.eval(engrave_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Engrave should be max(base, -engraving + depth)
-    sphere_values = fp.eval(sphere, points)
-    cube_values = fp.eval(cube, points)
+    sphere_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    cube_values = fp.eval(cube, points, [fp.x(), fp.y(), fp.z()])
     expected = np.maximum(sphere_values, -cube_values + depth)
     
     np.testing.assert_allclose(result, expected, rtol=1e-5)
@@ -67,7 +67,7 @@ def test_extrusion():
         [0.9, 0.0, 0.0],   # Outside the circle, midway
     ], dtype=np.float32)
         
-    result = fp.eval(extrusion_sdf, test_points)
+    result = fp.eval(extrusion_sdf, test_points, [fp.x(), fp.y(), fp.z()])
         
     # Verify points inside and outside are correctly identified
     assert result[0] < 0  # Center should be inside
@@ -83,12 +83,12 @@ def test_smooth_step_union():
     # Test with different smoothing factors
     for k in [0.1, 0.3, 0.5]:
         smooth_step_union_sdf = fpo.smooth_step_union(sphere, cube, k)
-        result = fp.eval(smooth_step_union_sdf, points)
+        result = fp.eval(smooth_step_union_sdf, points, [fp.x(), fp.y(), fp.z()])
         assert len(result) == len(points)
     
     # Test that with k=0, it approximates regular union
-    regular_union = fp.eval(fpo.union(sphere, cube), points)
-    almost_union = fp.eval(fpo.smooth_step_union(sphere, cube, 0.000001), points)
+    regular_union = fp.eval(fpo.union(sphere, cube), points, [fp.x(), fp.y(), fp.z()])
+    almost_union = fp.eval(fpo.smooth_step_union(sphere, cube, 0.000001), points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(regular_union, almost_union, atol=1e-5)
 
 def test_chamfer_intersection():
@@ -97,14 +97,14 @@ def test_chamfer_intersection():
     
     # Test with chamfer amount
     chamfer_isect_sdf = fpo.chamfer_intersection(sphere, cube, 0.2)
-    result = fp.eval(chamfer_isect_sdf, points)
+    result = fp.eval(chamfer_isect_sdf, points, [fp.x(), fp.y(), fp.z()])
     assert len(result) == len(points)
     
     # Basic validation: with amount=0, should match regular intersection
-    sphere_values = fp.eval(sphere, points)
-    cube_values = fp.eval(cube, points)
+    sphere_values = fp.eval(sphere, points, [fp.x(), fp.y(), fp.z()])
+    cube_values = fp.eval(cube, points, [fp.x(), fp.y(), fp.z()])
     expected_isect = np.maximum(sphere_values, cube_values)
-    zero_chamfer = fp.eval(fpo.chamfer_intersection(sphere, cube, 0.000001), points)
+    zero_chamfer = fp.eval(fpo.chamfer_intersection(sphere, cube, 0.000001), points, [fp.x(), fp.y(), fp.z()])
     np.testing.assert_allclose(expected_isect, zero_chamfer, atol=1e-4)
 
 def test_revolution():
@@ -125,7 +125,7 @@ def test_revolution():
         [0.8, 0.0, 0.6],     # Also inside profile but rotated (distance √(0.2² + 0.6²) ≈ 0.283 < 0.3)
     ], dtype=np.float32)
     
-    result = fp.eval(revolution_sdf, test_points)
+    result = fp.eval(revolution_sdf, test_points[:, [0, 2]], [fp.x(), fp.z()])
     
     # Verify points inside and outside are correctly identified
     assert result[0] > 0  # Center should be outside (inside the "donut hole")
@@ -153,7 +153,7 @@ def test_repeat():
         [2.5, 0.5, 0.5],     # Same relative position in repeated sphere
     ], dtype=np.float32)
     
-    result = fp.eval(repeat_sdf, repeat_test_points)
+    result = fp.eval(repeat_sdf, repeat_test_points, [fp.x(), fp.y(), fp.z()])
     
     # All sphere centers should have the same distance
     np.testing.assert_allclose(result[0], result[1], atol=1e-5)
@@ -185,7 +185,7 @@ def test_repeat_limited():
         [-4.0, 0.0, 0.0],     # Beyond repetition limit
     ], dtype=np.float32)
     
-    result = fp.eval(repeat_sdf, repeat_test_points)
+    result = fp.eval(repeat_sdf, repeat_test_points, [fp.x(), fp.y(), fp.z()])
     
     # Note: With limited repetition, the distances might not be identical
     # due to implementation details. Just check that the function runs.
@@ -205,7 +205,7 @@ def test_weight_blend():
     
     # Apply weighted blend with lists of SDFs and weights
     blend_sdf = fpo.weight_blend([sphere, cube], [weight1, weight2])
-    result = fp.eval(blend_sdf, points)
+    result = fp.eval(blend_sdf, points, [fp.x(), fp.y(), fp.z()])
     
     # Verify it runs without errors
     assert len(result) == len(points)
