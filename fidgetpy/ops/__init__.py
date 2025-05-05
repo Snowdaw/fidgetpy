@@ -38,7 +38,8 @@ from .domain_ops import (
 
 from .misc_ops import (
     smooth_step_union, chamfer_union, chamfer_intersection,
-    engrave, extrusion, revolution, 
+    engrave, extrusion, revolution, loft,
+    offset, shell, clearance,
     repeat, repeat_limited, weight_blend
 )
 
@@ -63,7 +64,8 @@ __all__ = [
     
     # Miscellaneous Operations
     'smooth_step_union', 'chamfer_union', 'chamfer_intersection',
-    'engrave', 'extrusion', 'revolution',
+    'engrave', 'extrusion', 'revolution', 'loft',
+    'offset', 'shell', 'clearance',
     'repeat', 'repeat_limited', 'weight_blend'
 ]
 

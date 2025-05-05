@@ -47,9 +47,9 @@ def sphere(radius=1.0):
     x, y, z = fp.x(), fp.y(), fp.z()
     return (x**2 + y**2 + z**2).sqrt() - radius
 
-def box(width=1.0, height=1.0, depth=1.0):
+def box_exact(width=1.0, height=1.0, depth=1.0):
     """
-    Create a box centered at the origin.
+    Create a box centered at the origin with exact Euclidean distance.
     
     This function creates an exact signed distance field for a box.
     The distance field is negative inside the box and positive outside,
@@ -68,13 +68,13 @@ def box(width=1.0, height=1.0, depth=1.0):
         
     Examples:
         # Create a cube
-        cube = fps.box(1.0, 1.0, 1.0)  # Creates a 1x1x1 cube
+        cube = fps.box_exact(1.0, 1.0, 1.0)  # Creates a 1x1x1 cube
         
         # Create a rectangular box
-        rect_box = fps.box(2.0, 1.0, 3.0)  # Creates a 2x1x3 box
+        rect_box = fps.box_exact(2.0, 1.0, 3.0)  # Creates a 2x1x3 box
         
         # Create a flat panel
-        panel = fps.box(5.0, 5.0, 0.1)  # Creates a thin 5x5 panel
+        panel = fps.box_exact(5.0, 5.0, 0.1)  # Creates a thin 5x5 panel
     """
     if width <= 0 or height <= 0 or depth <= 0:
         raise ValueError("Box dimensions must be positive")
@@ -88,10 +88,98 @@ def box(width=1.0, height=1.0, depth=1.0):
     dy = y.abs() - half_height
     dz = z.abs() - half_depth
     
-    inside = dx.max(dy).max(dz).min(0.0)
-    outside = (dx.max(0.0)**2 + dy.max(0.0)**2 + dz.max(0.0)**2).sqrt()
+    # Using the exact same formula as libfive's box_exact_centered
+    inside = fpm.min(0, fpm.max(dx, fpm.max(dy, dz)))
+    outside = fpm.sqrt(fpm.pow(fpm.max(dx, 0), 2) +
+                       fpm.pow(fpm.max(dy, 0), 2) +
+                       fpm.pow(fpm.max(dz, 0), 2))
     
     return inside + outside
+
+def box_mitered(width=1.0, height=1.0, depth=1.0):
+    """
+    Create a box centered at the origin with mitered edges.
+    
+    This function creates a signed distance field for a box with mitered edges.
+    The distance field is negative inside the box and positive outside.
+    Unlike box_exact, this version maintains sharp edges when offset.
+    
+    Args:
+        width: The width of the box along the x-axis (must be positive)
+        height: The height of the box along the y-axis (must be positive)
+        depth: The depth of the box along the z-axis (must be positive)
+        
+    Returns:
+        An SDF expression representing a box centered at the origin
+        
+    Raises:
+        ValueError: If any dimension is negative or zero
+        
+    Examples:
+        # Create a mitered cube
+        cube = fps.box_mitered(1.0, 1.0, 1.0)
+        
+        # Create a mitered rectangular box
+        rect_box = fps.box_mitered(2.0, 1.0, 3.0)
+    """
+    if width <= 0 or height <= 0 or depth <= 0:
+        raise ValueError("Box dimensions must be positive")
+    
+    x, y, z = fp.x(), fp.y(), fp.z()
+    half_width = width / 2.0
+    half_height = height / 2.0
+    half_depth = depth / 2.0
+    
+    # Calculate the distance to each face
+    dx = x.abs() - half_width
+    dy = y.abs() - half_height
+    dz = z.abs() - half_depth
+    
+    # The mitered distance is the maximum of the distances to each face
+    return fpm.max(dx, fpm.max(dy, dz))
+
+def rectangle(width=1.0, height=1.0):
+    """
+    Create a 2D rectangle in the XY plane centered at the origin.
+    
+    Args:
+        width: The width of the rectangle along the x-axis (must be positive)
+        height: The height of the rectangle along the y-axis (must be positive)
+        
+    Returns:
+        An SDF expression representing a 2D rectangle
+        
+    Raises:
+        ValueError: If any dimension is negative or zero
+    """
+    if width <= 0 or height <= 0:
+        raise ValueError("Rectangle dimensions must be positive")
+        
+    x, y = fp.x(), fp.y()
+    half_width = width / 2.0
+    half_height = height / 2.0
+    
+    dx = x.abs() - half_width
+    dy = y.abs() - half_height
+    
+    return fpm.max(dx, dy)
+
+def box(width=1.0, height=1.0, depth=1.0):
+    """
+    Create a box centered at the origin.
+    
+    This is an alias for box_exact, which creates an exact signed distance field.
+    See box_exact for more details.
+    
+    Args:
+        width: The width of the box along the x-axis (must be positive)
+        height: The height of the box along the y-axis (must be positive)
+        depth: The depth of the box along the z-axis (must be positive)
+        
+    Returns:
+        An SDF expression representing a box centered at the origin
+    """
+    return box_exact(width, height, depth)
 
 def plane(normal=(0, 1, 0), offset=0):
     """
@@ -131,6 +219,48 @@ def plane(normal=(0, 1, 0), offset=0):
     
     x, y, z = fp.x(), fp.y(), fp.z()
     return x * nx + y * ny + z * nz + offset
+
+def bounded_plane(normal=(0, 1, 0), offset=0, bounds=(2.0, 2.0, 2.0)):
+    """
+    Create a bounded plane (a finite section of a plane).
+    
+    This function creates a bounded plane by intersecting an infinite plane
+    with a box. The resulting shape has clean edges and maintains proper
+    distance field properties.
+    
+    Args:
+        normal: The normal vector of the plane (will be normalized)
+        offset: The offset of the plane from the origin along the normal
+        bounds: The dimensions of the bounding box (width, height, depth)
+        
+    Returns:
+        An SDF expression representing a bounded plane
+        
+    Raises:
+        ValueError: If normal is (0,0,0) or if any bound is negative or zero
+        
+    Examples:
+        # Create a bounded horizontal plane
+        floor_section = fps.bounded_plane((0, 1, 0), 0, (3.0, 0.1, 3.0))
+        
+        # Create a bounded vertical plane
+        wall_section = fps.bounded_plane((1, 0, 0), 2, (0.1, 4.0, 4.0))
+    """
+    if isinstance(bounds, (int, float)):
+        bounds = (bounds, bounds, bounds)
+    
+    width, height, depth = bounds
+    if width <= 0 or height <= 0 or depth <= 0:
+        raise ValueError("Bounds must be positive")
+    
+    # Create the infinite plane
+    infinite_plane = plane(normal, offset)
+    
+    # Create the bounding box using box_exact for clean edges
+    bounding_box = box_exact(width, height, depth)
+    
+    # Intersect the plane with the box
+    return fpm.max(infinite_plane, bounding_box)
 
 def torus(major_radius=1.0, minor_radius=0.25):
     """

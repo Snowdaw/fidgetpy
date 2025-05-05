@@ -5,7 +5,8 @@ This module provides various utility operations for SDF expressions that
 don't fit neatly into other categories, including:
 - Special union types (smooth_step_union, chamfer_union)
 - Special intersection types (chamfer_intersection)
-- Shape manipulation (engrave, extrusion, revolution)
+- Shape manipulation (engrave, extrusion, revolution, loft)
+- Shape modification (offset, shell, clearance)
 - Repetition (repeat, repeat_limited)
 - Advanced blending (weight_blend)
 
@@ -386,3 +387,174 @@ def weight_blend(sdfs, weights):
     
     # Normalize by the sum of weights
     return result / weight_sum
+
+def offset(expr, distance):
+    """
+    Expands or contracts a shape by the given distance.
+    
+    This operation creates a new shape that is offset from the original
+    by a specific distance. Positive distances expand the shape (making it larger),
+    while negative distances contract it (making it smaller).
+    
+    Args:
+        expr: The SDF expression to offset
+        distance: The offset distance (positive expands, negative contracts)
+        
+    Returns:
+        An SDF expression representing the offset shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        
+    Examples:
+        # Expand a sphere by 0.5 units
+        sphere = fp.shape.sphere(1.0)
+        expanded = fpo.offset(sphere, 0.5)  # Creates a sphere of radius 1.5
+        
+        # Contract a box by 0.2 units
+        box = fp.shape.box(1.0, 1.0, 1.0)
+        contracted = fpo.offset(box, -0.2)  # Creates a smaller box
+        
+    IMPORTANT: Only for direct function calls: fpo.offset(expr, distance)
+    Method calls are not supported for operations.
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("offset requires an SDF expression")
+        
+    # Simply add the distance to the SDF value
+    return expr - distance
+
+def shell(expr, thickness):
+    """
+    Creates a hollow shell from a solid shape.
+    
+    This operation turns a solid shape into a hollow shell with the
+    specified wall thickness. The shell is created by taking the absolute
+    difference between the original SDF and an offset version.
+    
+    Args:
+        expr: The SDF expression to create a shell from
+        thickness: The shell wall thickness (must be positive)
+        
+    Returns:
+        An SDF expression representing the shell
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If thickness is not positive
+        
+    Examples:
+        # Create a hollow sphere with 0.1 unit thick walls
+        sphere = fp.shape.sphere(1.0)
+        hollow_sphere = fpo.shell(sphere, 0.1)
+        
+        # Create a hollow box
+        box = fp.shape.box(1.0, 1.0, 1.0)
+        hollow_box = fpo.shell(box, 0.2)
+        
+    IMPORTANT: Only for direct function calls: fpo.shell(expr, thickness)
+    Method calls are not supported for operations.
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("shell requires an SDF expression")
+        
+    if thickness <= 0:
+        raise ValueError("Shell thickness must be positive")
+        
+    # Create the shell by taking the absolute difference between
+    # the original SDF and its offset version
+    return fpm.abs(expr) - thickness
+
+def clearance(a, b, distance):
+    """
+    Creates a shape with clearance between two existing shapes.
+    
+    This operation expands shape b by the given distance and
+    then subtracts it from shape a. This is useful for creating
+    clearance spaces between objects.
+    
+    Args:
+        a: The first SDF expression (kept)
+        b: The second SDF expression (expanded and subtracted)
+        distance: The clearance distance (must be positive)
+        
+    Returns:
+        An SDF expression representing shape a with clearance from shape b
+        
+    Raises:
+        TypeError: If a or b is not an SDF expression
+        ValueError: If distance is not positive
+        
+    Examples:
+        # Create a box with clearance from a sphere
+        box = fp.shape.box(2.0, 2.0, 2.0)
+        sphere = fp.shape.sphere(1.0)
+        result = fpo.clearance(box, sphere, 0.5)  # Box with sphere cut out plus 0.5 clearance
+        
+        # Create a mechanical part with clearance
+        base = fp.shape.cylinder(2.0, 1.0)
+        hole = fp.shape.cylinder(0.5, 2.0)
+        result = fpo.clearance(base, hole, 0.1)  # Cylinder with hole plus clearance
+        
+    IMPORTANT: Only for direct function calls: fpo.clearance(a, b, distance)
+    Method calls are not supported for operations.
+    """
+    if not hasattr(a, '_is_sdf_expr') or not hasattr(b, '_is_sdf_expr'):
+        raise TypeError("clearance requires SDF expressions")
+        
+    if distance <= 0:
+        raise ValueError("Clearance distance must be positive")
+        
+    # Expand shape b by the distance and subtract from a
+    expanded_b = offset(b, distance)
+    return fpm.max(a, -expanded_b)  # a - b using SDF subtraction
+
+def loft(a, b, zmin, zmax):
+    """
+    Creates a smooth transition between two 2D shapes along the Z axis.
+    
+    This operation creates a 3D shape by smoothly blending between two 2D shapes
+    at different Z heights. The shapes are assumed to be defined in the XY plane
+    and are invariant along the Z axis.
+    
+    Args:
+        a: The first SDF expression (at z=zmin)
+        b: The second SDF expression (at z=zmax)
+        zmin: The Z coordinate where shape a is positioned
+        zmax: The Z coordinate where shape b is positioned (must be > zmin)
+        
+    Returns:
+        An SDF expression representing the lofted shape
+        
+    Raises:
+        TypeError: If inputs are not SDF expressions or numeric types
+        ValueError: If zmax is not greater than zmin
+        
+    Examples:
+        # Create a transition from a circle to a square
+        circle = fp.shape.circle(1.0)
+        square = fp.shape.box(1.0, 1.0, 0.0)  # 2D square in XY plane
+        transition = fpo.loft(circle, square, -1.0, 1.0)
+        
+        # Create a tapered cylinder
+        small_circle = fp.shape.circle(0.5)
+        large_circle = fp.shape.circle(1.0)
+        tapered_cylinder = fpo.loft(small_circle, large_circle, 0.0, 2.0)
+        
+    IMPORTANT: Only for direct function calls: fpo.loft(a, b, zmin, zmax)
+    Method calls are not supported for operations.
+    """
+    if not hasattr(a, '_is_sdf_expr') or not hasattr(b, '_is_sdf_expr'):
+        raise TypeError("loft requires SDF expressions")
+        
+    if zmax <= zmin:
+        raise ValueError("zmax must be greater than zmin")
+    
+    # Get the z coordinate
+    z = fp.z()
+    
+    # Calculate the interpolation factor (0 at zmin, 1 at zmax)
+    t = fpm.clamp((z - zmin) / (zmax - zmin), 0.0, 1.0)
+    
+    # Linearly interpolate between the two shapes
+    return a * (1.0 - t) + b * t

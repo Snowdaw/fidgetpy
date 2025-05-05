@@ -5,6 +5,11 @@ This module provides transformation operations for SDF expressions, including:
 - Translation (translate)
 - Scaling (scale)
 - Rotation (rotate)
+- Reflection (reflect, reflect_axis, reflect_plane)
+- Symmetry (symmetric)
+- Deformations (twist, taper, shear, revolve)
+- Attraction/Repulsion (attract, repel)
+- Morphing (morph, extrude_z)
 - Affine transformations (remap_xyz, remap_affine)
 - Matrix helpers for creating transformation matrices
 """
@@ -12,6 +17,7 @@ This module provides transformation operations for SDF expressions, including:
 import math as py_math
 import fidgetpy as fp
 from .trigonometry import sin, cos
+from .basic_math import sqrt, pow
 
 # ===== Transformations =====
 
@@ -300,3 +306,838 @@ def remap_affine(expr, matrix):
     else:
         raise TypeError("Expression does not support remap_affine")
 
+def reflect(expr, nx, ny, nz, d=0):
+    """
+    Reflects an expression across a plane defined by normal (nx, ny, nz) and distance d.
+    
+    This function reflects the coordinate system, effectively reflecting the shape
+    across the plane defined by the equation nx*x + ny*y + nz*z = d.
+    
+    Args:
+        expr: The SDF expression to reflect
+        nx: X component of the plane normal vector
+        ny: Y component of the plane normal vector
+        nz: Z component of the plane normal vector
+        d: Distance of the plane from the origin (default: 0)
+        
+    Returns:
+        A new SDF expression representing the reflected shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If the normal vector is zero (nx=ny=nz=0)
+        
+    Examples:
+        # Reflect a sphere across the XY plane (z=0)
+        sphere = fp.shape.sphere(1.0).translate(0, 0, 2.0)
+        reflected_sphere = fpm.reflect(sphere, 0, 0, 1, 0)
+        
+        # Reflect using method call syntax
+        reflected_sphere = sphere.reflect(0, 0, 1, 0)
+        
+    Can be used as either:
+    - fpm.reflect(expr, nx, ny, nz, d)
+    - expr.reflect(nx, ny, nz, d) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("reflect requires an SDF expression")
+        
+    if nx == 0 and ny == 0 and nz == 0:
+        raise ValueError("Normal vector cannot be zero")
+        
+    # Normalization factor
+    norm_sq = nx*nx + ny*ny + nz*nz
+    
+    # Create coordinate variables
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Distance from point to plane
+    dist = (nx*x + ny*y + nz*z - d) / norm_sq
+    
+    # Reflection formula: p' = p - 2(n·(p-p0))n
+    # Where p is the point, n is the normal, and p0 is a point on the plane
+    new_x = x - 2*nx*dist
+    new_y = y - 2*ny*dist
+    new_z = z - 2*nz*dist
+    
+    return remap_xyz(expr, new_x, new_y, new_z)
+
+def reflect_axis(expr, axis='x', offset=0):
+    """
+    Reflects an expression across a coordinate plane.
+    
+    This function reflects the coordinate system across one of the coordinate
+    planes (YZ, XZ, or XY), effectively reflecting the shape.
+    
+    Args:
+        expr: The SDF expression to reflect
+        axis: The axis perpendicular to the reflection plane ('x', 'y', or 'z')
+        offset: Distance of the reflection plane from the origin (default: 0)
+        
+    Returns:
+        A new SDF expression representing the reflected shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If axis is not 'x', 'y', or 'z'
+        
+    Examples:
+        # Reflect a shape across the YZ plane (x=0)
+        box = fp.shape.box(1.0, 2.0, 0.5).translate(2.0, 0, 0)
+        reflected_box = fpm.reflect_axis(box, 'x')
+        
+        # Reflect across a custom plane (y=3)
+        reflected_box = fpm.reflect_axis(box, 'y', 3.0)
+        
+    Can be used as either:
+    - fpm.reflect_axis(expr, axis, offset)
+    - expr.reflect_axis(axis, offset) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("reflect_axis requires an SDF expression")
+    
+    if axis.lower() == 'x':
+        return reflect(expr, 1, 0, 0, offset)
+    elif axis.lower() == 'y':
+        return reflect(expr, 0, 1, 0, offset)
+    elif axis.lower() == 'z':
+        return reflect(expr, 0, 0, 1, offset)
+    else:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+
+def reflect_plane(expr, plane='xy'):
+    """
+    Reflects an expression by swapping two coordinates.
+    
+    This function reflects the shape across one of the diagonal planes
+    (x=y, y=z, or x=z) by swapping the appropriate coordinates.
+    
+    Args:
+        expr: The SDF expression to reflect
+        plane: The reflection plane ('xy', 'yz', or 'xz')
+        
+    Returns:
+        A new SDF expression representing the reflected shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If plane is not 'xy', 'yz', or 'xz'
+        
+    Examples:
+        # Reflect a shape across the x=y plane
+        box = fp.shape.box(1.0, 2.0, 0.5)
+        reflected_box = fpm.reflect_plane(box, 'xy')
+        
+    Can be used as either:
+    - fpm.reflect_plane(expr, plane)
+    - expr.reflect_plane(plane) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("reflect_plane requires an SDF expression")
+    
+    plane = plane.lower()
+    if plane == 'xy':
+        return remap_xyz(expr, fp.y(), fp.x(), fp.z())
+    elif plane == 'yz':
+        return remap_xyz(expr, fp.x(), fp.z(), fp.y())
+    elif plane == 'xz':
+        return remap_xyz(expr, fp.z(), fp.y(), fp.x())
+    else:
+        raise ValueError("Plane must be 'xy', 'yz', or 'xz'")
+
+def symmetric(expr, axis='x'):
+    """
+    Creates a symmetric shape by clipping at the origin and reflecting across a plane.
+    
+    This function first clips the given shape at the specified axis's origin,
+    then duplicates and reflects the remaining shape across that plane,
+    creating perfect symmetry along the specified axis.
+    
+    Args:
+        expr: The SDF expression to make symmetric
+        axis: The axis along which to create symmetry ('x', 'y', or 'z')
+        
+    Returns:
+        A new SDF expression representing the symmetrized shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If axis is not 'x', 'y', or 'z'
+        
+    Examples:
+        # Create a symmetric shape from a sphere positioned at x=2
+        sphere = fp.shape.sphere(1.0).translate(2.0, 0.0, 0.0)
+        symmetric_sphere = fpm.symmetric(sphere, 'x')
+        
+        # Create a symmetric shape along the z axis
+        cone = fp.shape.cone(1.0, 2.0).translate(0.0, 0.0, 1.0)
+        symmetric_cone = fpm.symmetric(cone, 'z')
+        
+    Can be used as either:
+    - fpm.symmetric(expr, axis)
+    - expr.symmetric(axis) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("symmetric requires an SDF expression")
+    
+    # Validate axis
+    axis = axis.lower()
+    if axis not in ['x', 'y', 'z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Create a mapping for the clipping operation
+    new_coords = {'x': x, 'y': y, 'z': z}  # Start with identity mapping
+    
+    # Replace the specified axis with max(axis, 0) to clip at the origin
+    new_coords[axis] = coords[axis].max(0)
+    
+    # Clip the shape at the origin
+    clipped = expr.remap_xyz(new_coords['x'], new_coords['y'], new_coords['z'])
+    
+    # Reflect the clipped part across the appropriate plane
+    reflected = reflect_axis(clipped, axis)
+    
+    # Combine original clipped and reflected parts
+    return clipped.min(reflected)
+
+def twist(expr, amount):
+    """
+    Applies a twist deformation around the Z axis.
+    
+    This function twists the coordinate system around the Z axis, with the amount
+    of twist proportional to the Z coordinate. The twist angle at a given Z
+    coordinate is Z * amount.
+    
+    Args:
+        expr: The SDF expression to twist
+        amount: The amount of twist per unit Z (in radians per unit)
+        
+    Returns:
+        A new SDF expression representing the twisted shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        
+    Examples:
+        # Create a twisted box
+        box = fp.shape.box(1.0, 1.0, 2.0)
+        twisted_box = fpm.twist(box, 0.5)  # Twist 0.5 radians per unit Z
+        
+    Can be used as either:
+    - fpm.twist(expr, amount)
+    - expr.twist(amount) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("twist requires an SDF expression")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Calculate rotation angle based on z coordinate
+    angle = z * amount
+    
+    # Calculate sines and cosines
+    c = cos(angle)
+    s = sin(angle)
+    
+    # Apply twist transformation
+    new_x = x * c - y * s
+    new_y = x * s + y * c
+    new_z = z
+    
+    return remap_xyz(expr, new_x, new_y, new_z)
+
+def taper(expr, axis='z', plane_axes=None, base=0.0, height=1.0, scale=0.5, base_scale=1.0):
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("symmetric requires an SDF expression")
+    
+    # Validate axis
+    axis = axis.lower()
+    if axis not in ['x', 'y', 'z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Create a mapping for the clipping operation
+    new_coords = {'x': x, 'y': y, 'z': z}  # Start with identity mapping
+    
+    # Replace the specified axis with max(axis, 0) to clip at the origin
+    new_coords[axis] = coords[axis].max(0)
+    
+    # Clip the shape at the origin
+    clipped = expr.remap_xyz(new_coords['x'], new_coords['y'], new_coords['z'])
+    
+    # Reflect the clipped part across the appropriate plane
+    reflected = reflect_axis(clipped, axis)
+    
+    # Combine original clipped and reflected parts
+    return clipped.min(reflected)
+    Tapers a shape along one axis by scaling coordinates in the perpendicular plane.
+    
+    This function scales coordinates in a plane perpendicular to the specified axis,
+    based on the position along that axis. The scaling factor varies linearly from
+    base_scale at position=base to scale at position=base+height.
+    
+    Args:
+        expr: The SDF expression to taper
+        axis: The axis along which to taper ('x', 'y', or 'z') (default: 'z')
+        plane_axes: Tuple of axes to scale (if None, automatically selects the two perpendicular axes)
+        base: The position along the taper axis where tapering begins
+        height: The distance over which tapering occurs
+        scale: The scale factor at base+height
+        base_scale: The scale factor at base (default: 1.0)
+        
+    Returns:
+        A new SDF expression representing the tapered shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If height is zero or axis is invalid
+        
+    Examples:
+        # Create a tapered cylinder (traditional taper_xy_z equivalent)
+        cylinder = fp.shape.cylinder(1.0, 2.0)
+        tapered = fpm.taper(cylinder, axis='z', base=0.0, height=2.0, scale=0.5)
+        
+        # Create a tapered box along X axis
+        box = fp.shape.box(2.0, 1.0, 1.0)
+        tapered = fpm.taper(box, axis='x', base=-1.0, height=2.0, scale=0.5)
+        
+    Can be used as either:
+    - fpm.taper(expr, axis, plane_axes, base, height, scale, base_scale)
+    - expr.taper(axis, plane_axes, base, height, scale, base_scale) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("taper requires an SDF expression")
+        
+    if height == 0:
+        raise ValueError("Taper height cannot be zero")
+    
+    # Validate axis
+    
+    if axis not in ['x', 'y', 'z', 'X', 'Y', 'Z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+        
+    axis = axis.lower()
+    # Automatically determine plane axes if not specified
+    if plane_axes is None:
+        all_axes = {'x', 'y', 'z'}
+        plane_axes = list(all_axes - {axis})
+    else:
+        # Validate plane_axes
+        if len(plane_axes) != 2:
+            raise ValueError("plane_axes must contain exactly two axis names")
+            
+        for a in plane_axes:
+            if a.lower() not in ['x', 'y', 'z']:
+                raise ValueError("plane_axes can only contain 'x', 'y', or 'z'")
+                
+        if axis in [a.lower() for a in plane_axes]:
+            raise ValueError("taper axis must be perpendicular to plane_axes")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Get the taper axis coordinate
+    taper_axis_coord = coords[axis]
+    
+    # Get the plane coordinates to scale
+    plane_coords = [coords[a.lower()] for a in plane_axes]
+    
+    # Calculate scale factor based on position along taper axis
+    factor = (taper_axis_coord - base) / height
+    # Clamp factor between 0 and 1
+    factor = factor.min(1.0).max(0.0)
+    # Interpolate between base_scale and scale
+    current_scale = base_scale + (scale - base_scale) * factor
+    
+    # Scale the plane coordinates
+    scaled_coords = [coord / current_scale for coord in plane_coords]
+    
+    # Create new coordinate mapping
+    new_coords = {'x': x, 'y': y, 'z': z}  # Start with identity mapping
+    
+    # Update with scaled coordinates
+    for i, axis_name in enumerate([a.lower() for a in plane_axes]):
+        new_coords[axis_name] = scaled_coords[i]
+    
+    # Apply the remapping
+    return remap_xyz(expr, new_coords['x'], new_coords['y'], new_coords['z'])
+
+# Legacy taper_xy_z function removed in favor of the more flexible taper function
+
+def shear(expr, shear_axis='x', control_axis='y', base=0.0, height=1.0, offset=1.0, base_offset=0.0):
+    """
+    Shears a shape along one axis as a function of another.
+    
+    This function applies a shear transformation that displaces points along
+    the shear_axis based on their position along the control_axis. The offset
+    varies linearly from base_offset at control_axis=base to offset at control_axis=base+height.
+    
+    Args:
+        expr: The SDF expression to shear
+        shear_axis: The axis to shear along ('x', 'y', or 'z')
+        control_axis: The axis that controls the shear amount ('x', 'y', or 'z')
+        base: The position along the control_axis where shearing begins
+        height: The distance over which shearing occurs
+        offset: The displacement along shear_axis at control_axis=base+height
+        base_offset: The displacement along shear_axis at control_axis=base (default: 0.0)
+        
+    Returns:
+        A new SDF expression representing the sheared shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If height is zero or axes are invalid
+        
+    Examples:
+        # Create a sheared box (traditional shear_x_y equivalent)
+        box = fp.shape.box(1.0, 2.0, 0.5)
+        sheared = fpm.shear(box, shear_axis='x', control_axis='y', base=0.0, height=2.0, offset=1.0)
+        
+        # Create a box sheared along Z as a function of X
+        box = fp.shape.box(2.0, 1.0, 1.0)
+        sheared = fpm.shear(box, shear_axis='z', control_axis='x', base=-1.0, height=2.0, offset=0.5)
+        
+    Can be used as either:
+    - fpm.shear(expr, shear_axis, control_axis, base, height, offset, base_offset)
+    - expr.shear(shear_axis, control_axis, base, height, offset, base_offset) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("shear requires an SDF expression")
+        
+    if height == 0:
+        raise ValueError("Shear height cannot be zero")
+    
+    # Validate axes
+    shear_axis = shear_axis.lower()
+    control_axis = control_axis.lower()
+    
+    if shear_axis not in ['x', 'y', 'z']:
+        raise ValueError("Shear axis must be 'x', 'y', or 'z'")
+        
+    if control_axis not in ['x', 'y', 'z']:
+        raise ValueError("Control axis must be 'x', 'y', or 'z'")
+        
+    if shear_axis == control_axis:
+        raise ValueError("Shear and control axes must be different")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Get the control axis coordinate
+    control_coord = coords[control_axis]
+    
+    # Calculate offset factor based on control coordinate
+    factor = (control_coord - base) / height
+    # Clamp factor between 0 and 1
+    factor = factor.min(1.0).max(0.0)
+    # Interpolate between base_offset and offset
+    current_offset = base_offset + (offset - base_offset) * factor
+    
+    # Create new coordinate mapping
+    new_coords = {'x': x, 'y': y, 'z': z}  # Start with identity mapping
+    
+    # Apply shear to the appropriate axis
+    new_coords[shear_axis] = coords[shear_axis] - current_offset
+    
+    # Apply the remapping
+    return remap_xyz(expr, new_coords['x'], new_coords['y'], new_coords['z'])
+
+# Legacy shear_x_y function removed in favor of the more flexible shear function
+
+def revolve(expr, axis='y', offset=0.0):
+    """
+    Revolves a 2D shape about an axis.
+    
+    This function revolves a 2D shape around a specified axis, creating a 3D solid
+    of revolution. The axis of revolution is parallel to the specified axis and
+    offset from the origin by the given amount.
+    
+    Args:
+        expr: The SDF expression to revolve (should be a 2D shape)
+        axis: The axis of revolution ('x', 'y', or 'z') (default: 'y')
+        offset: Offset of the revolution axis from the origin (default: 0.0)
+        
+    Returns:
+        A new SDF expression representing the revolved shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If axis is not 'x', 'y', or 'z'
+        
+    Examples:
+        # Create a torus by revolving a circle around the Y axis
+        circle = fp.shape.circle(0.5).translate(2.0, 0.0, 0.0)
+        torus = fpm.revolve(circle, axis='y')
+        
+        # Create a vase by revolving a profile around the Z axis
+        profile = fp.shape.box(0.5, 2.0, 0.1).translate(1.0, 0.0, 0.0)
+        vase = fpm.revolve(profile, axis='z')
+        
+    Can be used as either:
+    - fpm.revolve(expr, axis, offset)
+    - expr.revolve(axis, offset) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("revolve requires an SDF expression")
+    
+    # Validate axis
+    axis = axis.lower()
+    if axis not in ['x', 'y', 'z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Determine the plane perpendicular to the revolution axis
+    if axis == 'x':
+        # Revolve around X axis, use YZ plane
+        r = fpm.sqrt(fpm.pow(y, 2) + fpm.pow(z, 2))
+        # Remap to use Y as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, x, 0)
+    elif axis == 'y':
+        # Revolve around Y axis, use XZ plane
+        r = fpm.sqrt(fpm.pow(x, 2) + fpm.pow(z, 2))
+        # Remap to use Y as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, y, 0)
+    else:  # axis == 'z'
+        # Revolve around Z axis, use XY plane
+        r = fpm.sqrt(fpm.pow(x, 2) + fpm.pow(y, 2))
+        # Remap to use Z as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, z, 0)
+
+def revolve(expr, axis='y', offset=0.0):
+    """
+    Revolves a 2D shape about an axis.
+    
+    This function revolves a 2D shape around a specified axis, creating a 3D solid
+    of revolution. The axis of revolution is parallel to the specified axis and
+    offset from the origin by the given amount.
+    
+    Args:
+        expr: The SDF expression to revolve (should be a 2D shape)
+        axis: The axis of revolution ('x', 'y', or 'z') (default: 'y')
+        offset: Offset of the revolution axis from the origin (default: 0.0)
+        
+    Returns:
+        A new SDF expression representing the revolved shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If axis is not 'x', 'y', or 'z'
+        
+    Examples:
+        # Create a torus by revolving a circle around the Y axis
+        circle = fp.shape.circle(0.5).translate(2.0, 0.0, 0.0)
+        torus = fpm.revolve(circle, axis='y')
+        
+        # Create a vase by revolving a profile around the Z axis
+        profile = fp.shape.box(0.5, 2.0, 0.1).translate(1.0, 0.0, 0.0)
+        vase = fpm.revolve(profile, axis='z')
+        
+    Can be used as either:
+    - fpm.revolve(expr, axis, offset)
+    - expr.revolve(axis, offset) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("revolve requires an SDF expression")
+    
+    # Validate axis
+    axis = axis.lower()
+    if axis not in ['x', 'y', 'z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Determine the plane perpendicular to the revolution axis
+    if axis == 'x':
+        # Revolve around X axis, use YZ plane
+        r = sqrt(pow(y, 2) + pow(z, 2))
+        # Remap to use X as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, x, 0)
+    elif axis == 'y':
+        # Revolve around Y axis, use XZ plane
+        r = sqrt(pow(x, 2) + pow(z, 2))
+        # Remap to use Y as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, y, 0)
+    else:  # axis == 'z'
+        # Revolve around Z axis, use XY plane
+        r = sqrt(pow(x, 2) + pow(y, 2))
+        # Remap to use Z as the profile axis and R as the distance from axis
+        return remap_xyz(expr, r - offset, z, 0)
+
+def attract(expr, locus, radius, exaggerate=1.0):
+    """
+    Attracts a shape toward a point within a given radius.
+    
+    This function creates a smooth attraction effect that pulls points toward
+    the locus point, with the effect diminishing with distance and limited by
+    the radius parameter.
+    
+    Args:
+        expr: The SDF expression to attract
+        locus: The [x, y, z] coordinates of the attraction point
+        radius: The radius of influence for the attraction
+        exaggerate: A multiplier to control the strength of the effect (default: 1.0)
+        
+    Returns:
+        A new SDF expression representing the attracted shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If radius is negative or zero
+        
+    Examples:
+        # Attract a sphere towards the point [2, 0, 0]
+        sphere = fp.shape.sphere(1.0)
+        attracted = fpm.attract(sphere, [2, 0, 0], 3.0)
+        
+    Can be used as either:
+    - fpm.attract(expr, locus, radius, exaggerate)
+    - expr.attract(locus, radius, exaggerate) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("attract requires an SDF expression")
+        
+    if radius <= 0:
+        raise ValueError("Attraction radius must be positive")
+    
+    # Extract locus components
+    if not isinstance(locus, (list, tuple)) or len(locus) != 3:
+        raise ValueError("Locus must be a list or tuple of 3 coordinates [x, y, z]")
+    
+    lx, ly, lz = locus
+    
+    # Current position
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Vector from point to locus
+    dx = lx - x
+    dy = ly - y
+    dz = lz - z
+    
+    # Distance to locus
+    dist = length([dx, dy, dz])
+    
+    # Normalized direction to locus (avoiding division by zero)
+    epsilon = 1e-10
+    normalized_dist = max(dist, epsilon)
+    nx = dx / normalized_dist
+    ny = dy / normalized_dist
+    nz = dz / normalized_dist
+    
+    # Calculate falloff based on distance
+    # 1 at the locus, 0 at radius and beyond
+    falloff = max(1.0 - dist / radius, 0.0)
+    
+    # Smooth falloff curve
+    smooth_falloff = falloff**2 * (3 - 2 * falloff)
+    
+    # Calculate offset based on falloff and exaggeration
+    offset = smooth_falloff * exaggerate * radius
+    
+    # Apply offset in the direction of the locus
+    new_x = x + nx * offset
+    new_y = y + ny * offset
+    new_z = z + nz * offset
+    
+    return remap_xyz(expr, new_x, new_y, new_z)
+
+def repel(expr, locus, radius, exaggerate=1.0):
+    """
+    Repels a shape away from a point within a given radius.
+    
+    This function creates a smooth repulsion effect that pushes points away from
+    the locus point, with the effect diminishing with distance and limited by
+    the radius parameter.
+    
+    Args:
+        expr: The SDF expression to repel
+        locus: The [x, y, z] coordinates of the repulsion point
+        radius: The radius of influence for the repulsion
+        exaggerate: A multiplier to control the strength of the effect (default: 1.0)
+        
+    Returns:
+        A new SDF expression representing the repelled shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If radius is negative or zero
+        
+    Examples:
+        # Repel a sphere away from the point [2, 0, 0]
+        sphere = fp.shape.sphere(1.0)
+        repelled = fpm.repel(sphere, [2, 0, 0], 3.0)
+        
+    Can be used as either:
+    - fpm.repel(expr, locus, radius, exaggerate)
+    - expr.repel(locus, radius, exaggerate) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("repel requires an SDF expression")
+        
+    if radius <= 0:
+        raise ValueError("Repulsion radius must be positive")
+    
+    # Extract locus components
+    if not isinstance(locus, (list, tuple)) or len(locus) != 3:
+        raise ValueError("Locus must be a list or tuple of 3 coordinates [x, y, z]")
+    
+    lx, ly, lz = locus
+    
+    # Current position
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Vector from point to locus
+    dx = lx - x
+    dy = ly - y
+    dz = lz - z
+    
+    # Distance to locus
+    dist = length([dx, dy, dz])
+    
+    # Normalized direction to locus (avoiding division by zero)
+    epsilon = 1e-10
+    normalized_dist = max(dist, epsilon)
+    nx = dx / normalized_dist
+    ny = dy / normalized_dist
+    nz = dz / normalized_dist
+    
+    # Calculate falloff based on distance
+    # 1 at the locus, 0 at radius and beyond
+    falloff = max(1.0 - dist / radius, 0.0)
+    
+    # Smooth falloff curve
+    smooth_falloff = falloff**2 * (3 - 2 * falloff)
+    
+    # Calculate offset based on falloff and exaggeration
+    offset = smooth_falloff * exaggerate * radius
+    
+    # Apply offset in the direction away from the locus
+    new_x = x - nx * offset
+    new_y = y - ny * offset
+    new_z = z - nz * offset
+    
+    return remap_xyz(expr, new_x, new_y, new_z)
+
+def morph(expr1, expr2, factor):
+    """
+    Morphs between two shapes based on a factor between 0 and 1.
+    
+    This function performs a weighted linear combination of the two
+    input shapes, creating a smooth transition from expr1 to expr2.
+    
+    Args:
+        expr1: The first SDF expression
+        expr2: The second SDF expression
+        factor: A value between 0 and 1 controlling the morph
+               (0 = 100% expr1, 1 = 100% expr2)
+        
+    Returns:
+        A new SDF expression representing the morphed shape
+        
+    Raises:
+        TypeError: If expr1 or expr2 is not an SDF expression
+        ValueError: If factor is outside the range [0, 1]
+        
+    Examples:
+        # Morph between a sphere and a box
+        sphere = fp.shape.sphere(1.0)
+        box = fp.shape.box(1.0, 1.0, 1.0)
+        half_morph = fpm.morph(sphere, box, 0.5)  # 50% sphere, 50% box
+        
+    Can be used as either:
+    - fpm.morph(expr1, expr2, factor)
+    - expr1.morph(expr2, factor) (via extension)
+    """
+    if not hasattr(expr1, '_is_sdf_expr') or not hasattr(expr2, '_is_sdf_expr'):
+        raise TypeError("morph requires SDF expressions")
+        
+    # Calculate linear interpolation between the two shapes
+    # expr1 * (1 - factor) + expr2 * factor
+    return expr1 * (1 - factor) + expr2 * factor
+
+def extrude(expr, axis='z', min_val=-1.0, max_val=1.0):
+    """
+    Extrudes a 2D shape along a specified axis.
+    
+    This function takes a 2D shape and extends it between
+    the specified coordinates to create a 3D shape.
+    
+    Args:
+        expr: The 2D SDF expression to extrude
+        axis: The axis along which to extrude ('x', 'y', or 'z') (default: 'z')
+        min_val: The lower coordinate along the extrusion axis
+        max_val: The upper coordinate along the extrusion axis
+        
+    Returns:
+        A new SDF expression representing the extruded 3D shape
+        
+    Raises:
+        TypeError: If expr is not an SDF expression
+        ValueError: If min_val is greater than or equal to max_val
+        ValueError: If axis is not 'x', 'y', or 'z'
+        
+    Examples:
+        # Create a cylinder by extruding a circle along the Z axis
+        circle = fp.shape.circle(1.0)
+        cylinder = fpm.extrude(circle, axis='z', min_val=-1.0, max_val=1.0)
+        
+        # Create a prism by extruding a triangle along the Y axis
+        triangle = fp.shape.polygon(3, 1.0)
+        prism = fpm.extrude(triangle, axis='y', min_val=0.0, max_val=2.0)
+        
+    Can be used as either:
+    - fpm.extrude(expr, axis, min_val, max_val)
+    - expr.extrude(axis, min_val, max_val) (via extension)
+    """
+    if not hasattr(expr, '_is_sdf_expr'):
+        raise TypeError("extrude requires an SDF expression")
+        
+    if min_val >= max_val:
+        raise ValueError("min_val must be less than max_val")
+    
+    # Validate axis
+    axis = axis.lower()
+    if axis not in ['x', 'y', 'z']:
+        raise ValueError("Axis must be 'x', 'y', or 'z'")
+    
+    # Get coordinates
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Map axis names to actual coordinate variables
+    coords = {'x': x, 'y': y, 'z': z}
+    
+    # Get the axis coordinate
+    axis_coord = coords[axis]
+    
+    # Calculate the SDF by combining the 2D shape's SDF with a box in the extrusion axis
+    axis_dist = max(axis_coord - max_val, min_val - axis_coord)
+    
+    # The final SDF is the maximum of the 2D SDF and the axis distance
+    return max(expr, axis_dist)

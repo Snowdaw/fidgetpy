@@ -116,6 +116,49 @@ def infinite_cylinder(radius=1.0, axis=(0, 1, 0)):
     
     return (dx**2 + dy**2 + dz**2).sqrt() - radius
 
+def bounded_infinite_cylinder(radius=1.0, bounds=(2.0, 2.0, 2.0), axis=(0, 1, 0)):
+    """
+    Create a bounded infinite cylinder (a finite section of an infinite cylinder).
+    
+    This function creates a bounded cylinder by intersecting an infinite cylinder
+    with a box. The resulting shape has clean edges and maintains proper
+    distance field properties.
+    
+    Args:
+        radius: The radius of the cylinder (must be positive)
+        bounds: The dimensions of the bounding box (width, height, depth)
+        axis: The axis of the cylinder as a vector (x, y, z) (will be normalized)
+        
+    Returns:
+        An SDF expression representing a bounded cylinder
+        
+    Raises:
+        ValueError: If radius is negative or zero, if axis is (0,0,0),
+                   or if any bound is negative or zero
+        
+    Examples:
+        # Create a bounded vertical cylinder
+        cyl_section = fps.bounded_infinite_cylinder(1.0, (2.0, 2.0, 2.0), (0, 1, 0))
+        
+        # Create a bounded horizontal cylinder
+        horiz_cyl = fps.bounded_infinite_cylinder(0.5, (4.0, 2.0, 2.0), (1, 0, 0))
+    """
+    if isinstance(bounds, (int, float)):
+        bounds = (bounds, bounds, bounds)
+    
+    width, height, depth = bounds
+    if width <= 0 or height <= 0 or depth <= 0:
+        raise ValueError("Bounds must be positive")
+    
+    # Create the infinite cylinder
+    inf_cyl = infinite_cylinder(radius, axis)
+    
+    # Create the bounding box using box_exact for clean edges
+    bounding_box = fp.shape.box_exact(width, height, depth)
+    
+    # Intersect the cylinder with the box
+    return fpm.max(inf_cyl, bounding_box)
+
 def capsule(height=2.0, radius=0.5):
     """
     Create a capsule centered at the origin and aligned with the y-axis.

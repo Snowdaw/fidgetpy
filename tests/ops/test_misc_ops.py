@@ -209,3 +209,39 @@ def test_weight_blend():
     
     # Verify it runs without errors
     assert len(result) == len(points)
+    
+def test_loft():
+    """Test loft operation."""
+    # Create two simple 2D shapes
+    x, y, z = fp.x(), fp.y(), fp.z()
+    circle = x**2 + y**2 - 1.0  # Circle with radius 1
+    square = fpm.max(fpm.abs(x), fpm.abs(y)) - 1.0  # Square with side length 2
+    
+    # Create a loft between them
+    lofted = fpo.loft(circle, square, -1.0, 1.0)
+    
+    # Create test points
+    points_circle = np.array([[0.5, 0.0, -1.0]], dtype=np.float32)
+    points_mid = np.array([[0.5, 0.0, 0.0]], dtype=np.float32)
+    points_square = np.array([[0.5, 0.0, 1.0]], dtype=np.float32)
+    
+    # At z = -1, should be exactly the circle
+    circle_value = fp.eval(circle, points_circle[:, :2], [x, y])
+    loft_at_circle = fp.eval(lofted, points_circle, [x, y, z])
+    np.testing.assert_allclose(loft_at_circle, circle_value, atol=1e-6)
+    
+    # At z = 1, should be exactly the square
+    square_value = fp.eval(square, points_square[:, :2], [x, y])
+    loft_at_square = fp.eval(lofted, points_square, [x, y, z])
+    np.testing.assert_allclose(loft_at_square, square_value, atol=1e-6)
+    
+    # At z = 0 (halfway), should be a blend of both
+    circle_mid = fp.eval(circle, points_mid[:, :2], [x, y])
+    square_mid = fp.eval(square, points_mid[:, :2], [x, y])
+    expected_mid = 0.5 * circle_mid + 0.5 * square_mid
+    loft_at_mid = fp.eval(lofted, points_mid, [x, y, z])
+    np.testing.assert_allclose(loft_at_mid, expected_mid, atol=1e-6)
+    
+    # Test with invalid parameters
+    with pytest.raises(ValueError):
+        fpo.loft(circle, square, 1.0, 0.0)  # zmax <= zmin

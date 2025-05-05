@@ -46,6 +46,20 @@ def test_infinite_cylinder():
     
     # Test meshing with both methods and compare results
     success, py_stl, cli_stl = shape_dual_meshing(
+        bounded_cylinder, "bounded_infinite_cylinder_intersection", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Bounded infinite cylinder (intersection) meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_bounded_infinite_cylinder():
+    """Test the bounded_infinite_cylinder primitive."""
+    # Create a bounded infinite cylinder using the new function
+    bounded_cylinder = fps.bounded_infinite_cylinder(1.0, (2.0, 2.0, 2.0), (0, 1, 0))
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
         bounded_cylinder, "bounded_infinite_cylinder", depth=TEST_DEPTH, scale=TEST_SCALE
     )
     

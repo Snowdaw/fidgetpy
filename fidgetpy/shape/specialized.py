@@ -64,6 +64,10 @@ def box_frame(width=1.0, height=1.0, depth=1.0, thickness=0.1):
     """
     Create a hollow box frame SDF (like a wireframe box).
     
+    This implementation uses the difference between two boxes to create
+    a frame with clean edges. The outer box uses the exact Euclidean distance
+    field, while the inner box is slightly smaller by twice the thickness.
+    
     Args:
         width: The outer width of the box frame
         height: The outer height of the box frame
@@ -72,51 +76,30 @@ def box_frame(width=1.0, height=1.0, depth=1.0, thickness=0.1):
         
     Returns:
         An SDF expression representing a box frame
+        
+    Raises:
+        ValueError: If any dimension is negative or zero, or if thickness is too large
     """
-    x, y, z = fp.x(), fp.y(), fp.z()
+    if width <= 0 or height <= 0 or depth <= 0:
+        raise ValueError("Box frame dimensions must be positive")
     
-    # Half-extents of the box
-    bx, by, bz = width / 2.0, height / 2.0, depth / 2.0
+    if thickness <= 0:
+        raise ValueError("Thickness must be positive")
     
-    # Edge thickness/radius
-    e = thickness
+    if thickness * 2 >= min(width, height, depth):
+        raise ValueError("Thickness is too large for the given dimensions")
     
-    # Translate coordinates based on reference: p = abs(p) - b
-    px = x.abs() - bx
-    py = y.abs() - by
-    pz = z.abs() - bz
+    # Create the outer box
+    outer_box = fp.shape.box_exact(width, height, depth)
     
-    # Calculate intermediate vector q based on reference: q = abs(p+e) - e
-    qx = (px + e).abs() - e
-    qy = (py + e).abs() - e
-    qz = (pz + e).abs() - e
+    # Create the inner box (smaller by twice the thickness)
+    inner_width = width - 2 * thickness
+    inner_height = height - 2 * thickness
+    inner_depth = depth - 2 * thickness
+    inner_box = fp.shape.box_exact(inner_width, inner_height, inner_depth)
     
-    # Calculate term 1: length(max(vec3(p.x,q.y,q.z),0.0))+min(max(p.x,max(q.y,q.z)),0.0)
-    term1_vec_x = fpm.max(px, 0.0)
-    term1_vec_y = fpm.max(qy, 0.0)
-    term1_vec_z = fpm.max(qz, 0.0)
-    term1_len = fpm.length([term1_vec_x, term1_vec_y, term1_vec_z])
-    term1_min = fpm.min(fpm.max(px, fpm.max(qy, qz)), 0.0)
-    term1 = term1_len + term1_min
-    
-    # Calculate term 2: length(max(vec3(q.x,p.y,q.z),0.0))+min(max(q.x,max(p.y,q.z)),0.0)
-    term2_vec_x = fpm.max(qx, 0.0)
-    term2_vec_y = fpm.max(py, 0.0)
-    term2_vec_z = fpm.max(qz, 0.0)
-    term2_len = fpm.length([term2_vec_x, term2_vec_y, term2_vec_z])
-    term2_min = fpm.min(fpm.max(qx, fpm.max(py, qz)), 0.0)
-    term2 = term2_len + term2_min
-    
-    # Calculate term 3: length(max(vec3(q.x,q.y,p.z),0.0))+min(max(q.x,max(q.y,p.z)),0.0)
-    term3_vec_x = fpm.max(qx, 0.0)
-    term3_vec_y = fpm.max(qy, 0.0)
-    term3_vec_z = fpm.max(pz, 0.0)
-    term3_len = fpm.length([term3_vec_x, term3_vec_y, term3_vec_z])
-    term3_min = fpm.min(fpm.max(qx, fpm.max(qy, pz)), 0.0)
-    term3 = term3_len + term3_min
-    
-    # Return the minimum of the three terms
-    return fpm.min(fpm.min(term1, term2), term3)
+    # Subtract the inner box from the outer box
+    return fpm.max(outer_box, -inner_box)
 
 def link(length=1.0, width=0.5, height=0.25, thickness=0.1):
     """
@@ -268,86 +251,96 @@ def death_star(radius1=1.0, radius2=0.5, distance=1.2):
     # Return distance to death star using logical_if
     return fpm.logical_if(condition, d1, d2)
 
-def pyramid(side=1.0, height=1.0):
+def pyramid(width=1.0, height=1.0, length=None, base_z=0.0):
     """
-    Create a pyramid SDF with a square base centered at the origin, based on
-    Inigo Quilez' formula.
-
-    The pyramid is centered at the origin with its base in the xz-plane and its
-    apex pointing along the positive y-axis.
-
+    Create a pyramid SDF with a rectangular base centered at the origin.
+    
+    This implementation uses plane cutting and reflection operations to create
+    a pyramid. The base is centered in the XY plane at z=base_z,
+    with the apex at (0, 0, base_z+height).
+    
     Args:
-        side: The side length of the square base (must be positive)
-        height: The height of the pyramid (must be positive)
-
+        width: Width of the base along the X axis (must be positive)
+        height: Height of the pyramid from base to apex (must be positive)
+        length: Length of the base along the Y axis (if None, equals width for a square base)
+        base_z: Z coordinate of the base (default: 0.0)
+        
     Returns:
         An SDF expression representing a pyramid
-
+        
     Raises:
-        ValueError: If side or height is negative or zero
-
+        ValueError: If width, length, or height is negative or zero
+        
     Examples:
-        # Create a standard pyramid
+        # Create a square-based pyramid
         pyramid = fps.pyramid(1.0, 1.0)
-
-        # Create a tall, narrow pyramid
-        tall_pyramid = fps.pyramid(1.0, 2.0)
-
-        # Create a wide, flat pyramid
-        flat_pyramid = fps.pyramid(2.0, 0.5)
+        
+        # Create a tall, rectangular-based pyramid
+        tall_pyramid = fps.pyramid(1.0, 2.0, 1.5)
+        
+        # Create a pyramid with base at z=1.0
+        raised_pyramid = fps.pyramid(1.0, 1.0, base_z=1.0)
     """
-    if side <= 0 or height <= 0:
-        raise ValueError("Pyramid side and height must be positive")
-
-    px, py, pz = fp.x(), fp.y(), fp.z()
-    h = height
-    side_half = side / 2.0
-
-    # m2 = h*h + side_half*side_half
-    m2 = h * h + side_half * side_half
-
-    # p.xz = abs(p.xz)
-    px_abs = px.abs()
-    pz_abs = pz.abs()
-
-    # p.xz = (p.z>p.x) ? p.zx : p.xz;
-    cond_swap = pz_abs > px_abs
-    px_pre_sub = fpm.logical_if(cond_swap, pz_abs, px_abs)
-    pz_pre_sub = fpm.logical_if(cond_swap, px_abs, pz_abs)
-
-    # p.xz -= side_half;
-    px_eff = px_pre_sub - side_half
-    pz_eff = pz_pre_sub - side_half
-
-    # vec3 q = vec3( p.z, h*p.y - side_half*p.x, h*p.x + side_half*p.y);
-    # Uses the modified p.x and p.z (px_eff, pz_eff)
-    qx = pz_eff
-    qy = h * py - side_half * px_eff
-    qz = h * px_eff + side_half * py
-
-    # float s = max(-q.x,0.0);
-    s = fpm.max(-qx, 0.0)
-
-    # float t = clamp( (q.y-side_half*p.z)/(m2+0.25), 0.0, 1.0 );
-    # Note: Using 0.25 literally from the reference, even if side_half != 0.5
-    denominator_t = m2 + 0.25
-    t = fpm.clamp((qy - side_half * pz_eff) / denominator_t, 0.0, 1.0)
-
-    # float a = m2*(q.x+s)*(q.x+s) + q.y*q.y;
-    a = m2 * (qx + s)**2 + qy**2
-
-    # float b = m2*(q.x+side_half*t)*(q.x+side_half*t) + (q.y-m2*t)*(q.y-m2*t);
-    b = m2 * (qx + side_half * t)**2 + (qy - m2 * t)**2
-
-    # float d2 = min(q.y,-q.x*m2-q.y*side_half) > 0.0 ? 0.0 : min(a,b);
-    cond_d2 = fpm.min(qy, -qx * m2 - qy * side_half) > 0.0
-    d2 = fpm.logical_if(cond_d2, 0.0, fpm.min(a, b))
-
-    # return sqrt( (d2+q.z*q.z)/m2 ) * sign(max(q.z,-p.y));
-    final_dist = ((d2 + qz**2) / m2).sqrt()
-    final_sign = fpm.sign(fpm.max(qz, -py)) # Use original py for sign
-
-    return final_dist * final_sign
+    # If length is not specified, make a square-based pyramid
+    if length is None:
+        length = width
+        
+    if width <= 0 or length <= 0 or height <= 0:
+        raise ValueError("Pyramid dimensions must be positive")
+    
+    x, y, z = fp.x(), fp.y(), fp.z()
+    
+    # Calculate half-dimensions
+    dx = width / 2
+    dy = length / 2
+    
+    # Calculate hypotenuses (for triangles from center to edges)
+    hy_x = fpm.sqrt(fpm.pow(dx, 2) + fpm.pow(height, 2))
+    hy_y = fpm.sqrt(fpm.pow(dy, 2) + fpm.pow(height, 2))
+    
+    # Calculate parameters for the x-plane
+    short_x = fpm.min(dx, height)
+    mid_x = fpm.max(dx, height)
+    area_x = fpm.sqrt((hy_x + (mid_x + short_x)) *
+                      (short_x - (hy_x - mid_x)) *
+                      (short_x + (hy_x - mid_x)) *
+                      (hy_x + (mid_x - short_x))) / 4
+    x_offset = 2 * area_x / hy_x
+    
+    # Create the x-plane
+    x_plane = -(x * height / hy_x - z * dx / hy_x + x_offset)
+    
+    # Reflect the x-plane across the YZ plane (x=0)
+    x_plane_reflected = fpm.reflect_axis(x_plane, 'x')
+    x_planes = fpm.max(x_plane, x_plane_reflected)
+    
+    # Calculate parameters for the y-plane
+    short_y = fpm.min(dy, height)
+    mid_y = fpm.max(dy, height)
+    area_y = fpm.sqrt((hy_y + (mid_y + short_y)) *
+                      (short_y - (hy_y - mid_y)) *
+                      (short_y + (hy_y - mid_y)) *
+                      (hy_y + (mid_y - short_y))) / 4
+    y_offset = 2 * area_y / hy_y
+    
+    # Create the y-plane
+    y_plane = -(y * height / hy_y - z * dy / hy_y + y_offset)
+    
+    # Reflect the y-plane across the XZ plane (y=0)
+    y_plane_reflected = fpm.reflect_axis(y_plane, 'y')
+    y_planes = fpm.max(y_plane, y_plane_reflected)
+    
+    # Combine the planes to form the pyramid
+    planes = fpm.max(x_planes, y_planes)
+    
+    # Add the base plane (floor at z=0)
+    pyramid = fpm.max(planes, -z)
+    
+    # Move the base to the specified base_z position
+    if base_z != 0:
+        pyramid = fpm.translate(pyramid, 0, 0, base_z)
+    
+    return pyramid
 
 def rhombus(la=0.5, lb=0.5, h=0.5, ra=0.1):
     """

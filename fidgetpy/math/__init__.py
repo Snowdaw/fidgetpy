@@ -28,7 +28,10 @@ from .vector_math import (
 
 from .transformations import (
     translate, rotate, scale,
-    remap_xyz, remap_affine
+    remap_xyz, remap_affine,
+    reflect, reflect_axis, reflect_plane,
+    symmetric, twist, taper, shear, revolve,
+    attract, repel, morph, extrude
 )
 
 from .domain_manipulation import (
@@ -61,9 +64,12 @@ __all__ = [
     # Transformations
     'translate', 'rotate', 'scale',
     'remap_xyz', 'remap_affine', 'combine_matrices',
+    'reflect', 'reflect_axis', 'reflect_plane',
+    'symmetric', 'twist', 'taper', 'shear', 'revolve',
+    'attract', 'repel', 'morph', 'extrude',
     
     # Domain Manipulation
-    'repeat', 'mirror', 'symmetry'
+    'repeat', 'mirror', 'symmetry',
     
     # Interpolation
     'mix', 'lerp', 'smoothstep', 'step', 'smootherstep',

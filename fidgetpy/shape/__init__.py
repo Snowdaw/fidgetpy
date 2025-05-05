@@ -16,7 +16,8 @@ the fidgetpy.ops module.
 
 # Import everything from each module
 from .primitives import (
-    sphere, box, plane, torus, octahedron, hexagonal_prism
+    sphere, box, box_exact, box_mitered, rectangle, plane, bounded_plane,
+    torus, octahedron, hexagonal_prism
 )
 
 from .rounded_shapes import (
@@ -25,7 +26,7 @@ from .rounded_shapes import (
 )
 
 from .cylinders import (
-    cylinder, infinite_cylinder, capsule, vertical_capsule, 
+    cylinder, infinite_cylinder, bounded_infinite_cylinder, capsule, vertical_capsule,
     cone, capped_cone, capped_cylinder
 )
 
@@ -41,14 +42,15 @@ from .specialized import (
 # Define __all__ to control what gets imported with "from fidgetpy.shape import *"
 __all__ = [
     # Primitives
-    'sphere', 'box', 'plane', 'torus', 'octahedron', 'hexagonal_prism',
+    'sphere', 'box', 'box_exact', 'box_mitered', 'rectangle', 'plane', 'bounded_plane',
+    'torus', 'octahedron', 'hexagonal_prism',
     
     # Rounded Shapes
     'rounded_box', 'rounded_cylinder', 'round_cone', 'capped_torus',
     'solid_angle',
     
     # Cylinders
-    'cylinder', 'infinite_cylinder', 'capsule', 'vertical_capsule',
+    'cylinder', 'infinite_cylinder', 'bounded_infinite_cylinder', 'capsule', 'vertical_capsule',
     'cone', 'capped_cone', 'capped_cylinder',
     
     # Curves
