@@ -17,7 +17,10 @@ All shapes in this module follow a consistent documentation style as outlined in
 The shape functions have been organized into logically grouped files:
 
 - **primitives.py**: Basic shape primitives
-  - sphere, box, plane, torus, octahedron, hexagonal_prism
+  - 3D shapes: sphere, box_exact, box_exact_centered, box_mitered, box_mitered_centered, cylinder_z, cone, cone_z, cone_ang_z, torus, torus_z, octahedron, hexagonal_prism, pyramid_z, gyroid
+  - 2D shapes: circle, ring, polygon, rectangle, rectangle_centered_exact, triangle, half_plane
+  - Planes and spaces: plane, bounded_plane, half_space
+  - Operations: extrude_z
 
 - **rounded_shapes.py**: Shapes with rounded features
   - rounded_box, rounded_cylinder, round_cone, capped_torus, solid_angle

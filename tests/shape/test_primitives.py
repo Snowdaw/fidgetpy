@@ -40,7 +40,7 @@ def test_sphere():
 def test_box():
     """Test the box primitive (alias for box_exact)."""
     # Create a box with different dimensions
-    box = fps.box(1.0, 1.5, 0.75)
+    box = fps.box_exact(1.0, 1.5, 0.75)
     
     # Test meshing with both methods and compare results
     success, py_stl, cli_stl = shape_dual_meshing(
@@ -123,7 +123,7 @@ def test_plane():
     """Test the plane primitive with a bounding box."""
     # Create a plane along with a bounding box to make it finite
     plane = fps.plane((0, 1, 0), 0)  # XZ plane
-    box = fps.box(2.0, 1.0, 2.0)  # Bounding box
+    box = fps.box_exact(2.0, 1.0, 2.0)  # Bounding box
     bounded_plane = fp.ops.intersection(plane, box)
     
     # Test meshing with both methods and compare results
@@ -181,6 +181,89 @@ def test_hexagonal_prism():
     assert success, f"Hexagonal prism meshes differ: {py_stl} vs {cli_stl}"
     
     
+
+
+def test_circle():
+    """Test the circle primitive."""
+    # Create a circle with radius 1.0
+    # Note: circle function expects (radius, center) where center is a tuple
+    circle = fps.circle(1.0, (0.0, 0.0))
+    
+    # Create a 3D shape by extruding the circle
+    x, y, z = fp.x(), fp.y(), fp.z()
+    extruded_circle = fpm.max(circle, fpm.abs(z) - 0.2)
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        extruded_circle, "circle", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Circle meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_ring():
+    """Test the ring primitive."""
+    # Create a ring with outer radius 1.0 and inner radius 0.5
+    # Note: ring function expects (outer_radius, inner_radius, center_x, center_y)
+    ring = fps.ring(1.0, 0.5, 0.0, 0.0)
+    
+    # Create a 3D shape by extruding the ring
+    x, y, z = fp.x(), fp.y(), fp.z()
+    extruded_ring = fpm.max(ring, fpm.abs(z) - 0.2)
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        extruded_ring, "ring", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Ring meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_cylinder_z():
+    """Test the cylinder_z primitive."""
+    # Create a cylinder along the z-axis
+    # Note: cylinder_z function expects (radius, height, base) where base is a tuple
+    cylinder = fps.cylinder_z(0.5, 1.0, (0.0, 0.0, 0.0))
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        cylinder, "cylinder_z", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Cylinder_z meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_cone_z():
+    """Test the cone_z primitive."""
+    # Create a cone along the z-axis
+    # Note: cone_z function expects (radius, height, base) where base is a tuple
+    cone = fps.cone_z(0.5, 1.0, (0.0, 0.0, 0.0))
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        cone, "cone_z", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Cone_z meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_pyramid_z():
+    """Test the pyramid_z primitive."""
+    # Create a pyramid with a rectangular base
+    # Note: pyramid_z function expects (a, b, zmin, height) where a and b are tuples
+    pyramid = fps.pyramid_z((-0.5, -0.5), (0.5, 0.5), 0.0, 1.0)
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        pyramid, "pyramid_z", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Pyramid_z meshes differ: {py_stl} vs {cli_stl}"
 
 
 if __name__ == "__main__":

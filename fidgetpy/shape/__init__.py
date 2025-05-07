@@ -16,8 +16,11 @@ the fidgetpy.ops module.
 
 # Import everything from each module
 from .primitives import (
-    sphere, box, box_exact, box_mitered, rectangle, plane, bounded_plane,
-    torus, octahedron, hexagonal_prism
+    sphere, box_exact, box_mitered, box_mitered_centered,
+    rectangle, rectangle_centered_exact, plane, bounded_plane, half_space,
+    torus, torus_z, octahedron, hexagonal_prism,
+    circle, ring, polygon, half_plane, triangle,
+    cylinder_z, cone_z, cone_ang_z, pyramid_z, extrude_z, gyroid
 )
 
 from .rounded_shapes import (
@@ -42,8 +45,11 @@ from .specialized import (
 # Define __all__ to control what gets imported with "from fidgetpy.shape import *"
 __all__ = [
     # Primitives
-    'sphere', 'box', 'box_exact', 'box_mitered', 'rectangle', 'plane', 'bounded_plane',
-    'torus', 'octahedron', 'hexagonal_prism',
+    'sphere', 'box_exact', 'box_exact_centered', 'box_mitered', 'box_mitered_centered',
+    'rectangle', 'rectangle_centered_exact', 'plane', 'bounded_plane', 'half_space',
+    'torus', 'torus_z', 'octahedron', 'hexagonal_prism',
+    'circle', 'ring', 'polygon', 'half_plane', 'triangle',
+    'cylinder_z', 'cone_z', 'cone_ang_z', 'pyramid_z', 'extrude_z', 'gyroid',
     
     # Rounded Shapes
     'rounded_box', 'rounded_cylinder', 'round_cone', 'capped_torus',

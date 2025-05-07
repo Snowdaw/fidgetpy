@@ -41,7 +41,7 @@ def test_infinite_cylinder():
     inf_cylinder = fps.infinite_cylinder(1.0)
     
     # Create a bounding box to make it finite
-    box = fps.box(2.0, 2.0, 2.0)
+    box = fps.box_exact(2.0, 2.0, 2.0)
     bounded_cylinder = fp.ops.intersection(inf_cylinder, box)
     
     # Test meshing with both methods and compare results

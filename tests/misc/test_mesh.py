@@ -59,7 +59,7 @@ def test_mesh_format_list():
 
 def test_mesh_options():
     """Test meshing with different options (scale, center, depth)."""
-    box = fps.box(width=0.5, height=0.5, depth=0.5)
+    box = fps.box_exact(width=0.5, height=0.5, depth=0.5)
     default_scale = 2.0
     default_center = [0.0, 0.0, 0.0]
 

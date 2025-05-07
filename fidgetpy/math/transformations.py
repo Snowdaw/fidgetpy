@@ -21,9 +21,9 @@ from .basic_math import sqrt, pow
 
 # ===== Transformations =====
 
-def translate(expr, tx, ty, tz):
+def translate(expr, tx, ty, tz, pivot_x=None, pivot_y=None, pivot_z=None):
     """
-    Translates an expression by the specified amounts.
+    Translates an expression by the specified amounts, optionally from a pivot point.
     
     This function shifts the coordinate system, effectively moving the shape
     in the opposite direction.
@@ -33,6 +33,9 @@ def translate(expr, tx, ty, tz):
         tx: Translation amount along X axis
         ty: Translation amount along Y axis
         tz: Translation amount along Z axis
+        pivot_x: Optional X coordinate of pivot point. If provided with pivot_y and pivot_z, translates relative to this point.
+        pivot_y: Optional Y coordinate of pivot point. If provided with pivot_x and pivot_z, translates relative to this point.
+        pivot_z: Optional Z coordinate of pivot point. If provided with pivot_x and pivot_y, translates relative to this point.
         
     Returns:
         A new SDF expression representing the translated shape
@@ -45,16 +48,46 @@ def translate(expr, tx, ty, tz):
         sphere = fp.shape.sphere(1.0)
         translated_sphere = fpm.translate(sphere, 2.0, 0.0, 0.0)
         
-        # Translate using method call syntax
-        translated_sphere = sphere.translate(2.0, 0.0, 0.0)
+        # Translate using method call syntax with a pivot point
+        # Moving a shape 2 units in the +X direction from pivot point (1,1,1)
+        # The pivot parameters indicate the center point around which to translate
+        pivot_translated = sphere.translate(2.0, 0.0, 0.0, pivot_x=1.0, pivot_y=1.0, pivot_z=1.0)
         
     Can be used as either:
-    - fpm.translate(expr, tx, ty, tz)
-    - expr.translate(tx, ty, tz) (via extension)
+    - fpm.translate(expr, tx, ty, tz, pivot_x=None, pivot_y=None, pivot_z=None)
+    - expr.translate(tx, ty, tz, pivot_x=None, pivot_y=None, pivot_z=None) (via extension)
     """
     if not hasattr(expr, '_is_sdf_expr'):
         raise TypeError("translate requires an SDF expression")
     
+    # Check if pivot point is provided (all three coordinates must be provided)
+    has_pivot = pivot_x is not None and pivot_y is not None and pivot_z is not None
+    
+    if has_pivot:
+        # For pivot-based translation, we need to:
+        # 1. Apply the translation vector to the pivot point
+        # 2. Calculate the difference between the new pivot position and original pivot position
+        # This gives us the effective translation for each point in the space
+        
+        # New position of pivot after translation
+        new_pivot_x = pivot_x + tx
+        new_pivot_y = pivot_y + ty
+        new_pivot_z = pivot_z + tz
+        
+        # Calculate the translation vector for each point in space
+        # For this, we find where each point would end up relative to the new pivot
+        x = fp.x()
+        y = fp.y()
+        z = fp.z()
+        
+        # Translate coordinates to the new positions relative to the moved pivot
+        new_x = x - (new_pivot_x - pivot_x)
+        new_y = y - (new_pivot_y - pivot_y)
+        new_z = z - (new_pivot_z - pivot_z)
+        
+        return remap_xyz(expr, new_x, new_y, new_z)
+    
+    # Standard translation without pivot
     # Determine which variables are needed based on translation amounts
     need_x = tx != 0
     need_y = ty != 0
@@ -80,9 +113,9 @@ def translate(expr, tx, ty, tz):
 
     return remap_xyz(expr, new_x, new_y, new_z)
 
-def scale(expr, sx, sy, sz):
+def scale(expr, sx, sy, sz, pivot_x=None, pivot_y=None, pivot_z=None):
     """
-    Scales an expression non-uniformly along each axis.
+    Scales an expression non-uniformly along each axis from a pivot point.
 
     This function scales the coordinate system, effectively scaling the shape
     by the reciprocal of the scale factors. Positive scale factors will preserve
@@ -94,6 +127,9 @@ def scale(expr, sx, sy, sz):
         sx: Scale factor along X axis (non-zero)
         sy: Scale factor along Y axis (non-zero)
         sz: Scale factor along Z axis (non-zero)
+        pivot_x: Optional X coordinate of pivot point. If provided with pivot_y and pivot_z, scales around this point.
+        pivot_y: Optional Y coordinate of pivot point. If provided with pivot_x and pivot_z, scales around this point.
+        pivot_z: Optional Z coordinate of pivot point. If provided with pivot_x and pivot_y, scales around this point.
 
     Returns:
         A new SDF expression representing the scaled shape
@@ -107,19 +143,41 @@ def scale(expr, sx, sy, sz):
         sphere = fp.shape.sphere(1.0)
         ellipsoid = fpm.scale(sphere, 2.0, 1.0, 0.5)
 
-        # Scale using method call syntax
-        ellipsoid = sphere.scale(2.0, 1.0, 0.5)
+        # Scale using method call syntax with a pivot point
+        translated_sphere = sphere.translate(2.0, 1.0, 0.5)
+        # Scale around the translated sphere's center (2,1,0.5)
+        # Simply provide the actual pivot point - no need for negation
+        scaled_sphere = translated_sphere.scale(2.0, 1.0, 0.5, pivot_x=2.0, pivot_y=1.0, pivot_z=0.5)
 
     Can be used as either:
-    - fpm.scale(expr, sx, sy, sz)
-    - expr.scale(sx, sy, sz) (via extension)
+    - fpm.scale(expr, sx, sy, sz, pivot_x=None, pivot_y=None, pivot_z=None)
+    - expr.scale(sx, sy, sz, pivot_x=None, pivot_y=None, pivot_z=None) (via extension)
     """
     if not hasattr(expr, '_is_sdf_expr'):
         raise TypeError("scale requires an SDF expression")
 
     if sx == 0 or sy == 0 or sz == 0:
         raise ValueError("Scale factors cannot be zero")
-
+        
+    # Check if pivot point is provided (all three coordinates must be provided)
+    has_pivot = pivot_x is not None and pivot_y is not None and pivot_z is not None
+    
+    # Handle scaling around a pivot point
+    if has_pivot:
+        # When user provides a pivot point, they should expect the transformation to occur
+        # around that exact point, without needing to understand SDF coordinate transformations.
+        # We handle the necessary negations internally to make the API more intuitive.
+        
+        # 1. Translate pivot point to origin (SDF transforms coordinate space in opposite direction)
+        translated = translate(expr, -pivot_x, -pivot_y, -pivot_z)
+        
+        # 2. Apply scaling (using the simpler non-pivot version)
+        scaled = scale(translated, sx, sy, sz)
+        
+        # 3. Translate back to original position
+        return translate(scaled, pivot_x, pivot_y, pivot_z)
+    
+    # Original scaling logic (around origin)
     # Determine which variables are needed based on scale factors
     # Only when scale is 1.0 (identity) can we skip creating that variable
     need_x = sx != 1.0
@@ -146,7 +204,7 @@ def scale(expr, sx, sy, sz):
 
     return remap_xyz(expr, new_x, new_y, new_z)
 
-def rotate(expr, rx, ry, rz):
+def rotate(expr, rx, ry, rz, pivot_x=None, pivot_y=None, pivot_z=None):
     """
     Rotates an expression around the Z, Y, and then X axes (intrinsic Tait-Bryan angles).
 
@@ -160,6 +218,9 @@ def rotate(expr, rx, ry, rz):
         rx: Rotation angle around the final X axis in radians
         ry: Rotation angle around the intermediate Y axis in radians
         rz: Rotation angle around the initial Z axis in radians
+        pivot_x: Optional X coordinate of pivot point. If provided with pivot_y and pivot_z, rotates around this point.
+        pivot_y: Optional Y coordinate of pivot point. If provided with pivot_x and pivot_z, rotates around this point.
+        pivot_z: Optional Z coordinate of pivot point. If provided with pivot_x and pivot_y, rotates around this point.
 
     Returns:
         A new SDF expression representing the rotated shape
@@ -172,12 +233,15 @@ def rotate(expr, rx, ry, rz):
         box = fp.shape.box(1.0, 2.0, 0.5)
         rotated_box = fpm.rotate(box, py_math.pi / 4, 0, py_math.pi / 6)
 
-        # Rotate using method call syntax
-        rotated_box = box.rotate(py_math.pi / 4, 0, py_math.pi / 6)
+        # Rotate using method call syntax with pivot point
+        translated_box = box.translate(2.0, 1.0, 0.5)
+        # Rotate around the box's center, not the origin
+        # Simply provide the actual pivot point - no need to understand SDF internals
+        rotated_box = translated_box.rotate(py_math.pi/4, 0, 0, pivot_x=2.0, pivot_y=1.0, pivot_z=0.5)
 
     Can be used as either:
-    - fpm.rotate(expr, rx, ry, rz)
-    - expr.rotate(rx, ry, rz) (via extension)
+    - fpm.rotate(expr, rx, ry, rz, pivot_x=None, pivot_y=None, pivot_z=None)
+    - expr.rotate(rx, ry, rz, pivot_x=None, pivot_y=None, pivot_z=None) (via extension)
     """
     if not hasattr(expr, '_is_sdf_expr'):
         raise TypeError("rotate requires an SDF expression")
@@ -186,6 +250,25 @@ def rotate(expr, rx, ry, rz):
     if rx == 0 and ry == 0 and rz == 0:
         return expr  # No rotation needed, return original expression
         
+    # Check if pivot point is provided (all three coordinates must be provided)
+    has_pivot = pivot_x is not None and pivot_y is not None and pivot_z is not None
+        
+    # Handle rotation around a pivot point
+    if has_pivot:
+        # When user provides a pivot point, they should expect the rotation to occur
+        # around that exact point, without needing to understand SDF coordinate transformations.
+        # We handle the necessary negations internally to make the API more intuitive.
+        
+        # 1. Translate pivot point to origin (SDF transforms coordinate space in opposite direction)
+        translated = translate(expr, -pivot_x, -pivot_y, -pivot_z)
+        
+        # 2. Apply rotation (using the simpler non-pivot version)
+        rotated = rotate(translated, rx, ry, rz)
+        
+        # 3. Translate back to original position
+        return translate(rotated, pivot_x, pivot_y, pivot_z)
+        
+    # Original rotation logic (around origin)
     # For rotation, we generally need all three variables due to the nature of rotation matrices
     # except in the special case of zero rotation
     x, y, z = fp.x(), fp.y(), fp.z()

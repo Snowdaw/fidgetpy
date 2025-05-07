@@ -17,7 +17,7 @@ import struct
 import numpy as np
 
 # Global flag to control cleanup. Set to False to keep output files after tests.
-CLEANUP_TEST_OUTPUT = False
+CLEANUP_TEST_OUTPUT = True
 # Directory for persistent test output when cleanup is disabled
 PERSISTENT_OUTPUT_DIR = Path("test_output")
 
