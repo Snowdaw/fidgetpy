@@ -60,7 +60,7 @@ pub fn mesh_impl(
 ) -> PyResult<Py<PyMesh>> {
     // Add a safety check for depth to prevent integer overflow
     // The Octree builder calculates 8^depth, which can overflow for large depth values
-    const MAX_SAFE_DEPTH: u8 = 24;
+    const MAX_SAFE_DEPTH: u8 = 64;
     let safe_depth = if depth > MAX_SAFE_DEPTH {
         eprintln!("Warning: Capping depth from {} to {}", depth, MAX_SAFE_DEPTH);
         MAX_SAFE_DEPTH
