@@ -14,6 +14,7 @@ combined using operations from the fidgetpy.ops module.
 import math
 import fidgetpy as fp
 import fidgetpy.math as fpm
+from .rounded_shapes import rounded_box
 
 def sphere(radius=1.0, center_x=0.0, center_y=0.0, center_z=0.0):
     """
@@ -81,22 +82,7 @@ def box_exact(width=1.0, height=1.0, depth=1.0):
     if width <= 0 or height <= 0 or depth <= 0:
         raise ValueError("Box dimensions must be positive")
         
-    x, y, z = fp.x(), fp.y(), fp.z()
-    half_width = width / 2.0
-    half_height = height / 2.0
-    half_depth = depth / 2.0
-    
-    dx = x.abs() - half_width
-    dy = y.abs() - half_height
-    dz = z.abs() - half_depth
-    
-    # Using the exact same formula as libfive's box_exact_centered
-    inside = fpm.min(0, fpm.max(dx, fpm.max(dy, dz)))
-    outside = fpm.sqrt(fpm.pow(fpm.max(dx, 0), 2) +
-                       fpm.pow(fpm.max(dy, 0), 2) +
-                       fpm.pow(fpm.max(dz, 0), 2))
-    
-    return inside + outside
+    return rounded_box(width, height, depth, radius=0.01)
 
 def box_mitered(width=1.0, height=1.0, depth=1.0):
     """

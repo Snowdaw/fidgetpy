@@ -103,6 +103,83 @@ def test_polyline():
     
 
 
+def test_bezier_spline():
+    """Test the bezier_spline shape."""
+    # Create points for the spline
+    points = [
+        (-1.0, 0.0, 0.0),  # First point
+        (0.0, 1.0, 0.0),   # Second point
+        (1.0, 0.0, 0.0)    # Third point
+    ]
+    
+    # Create left and right handles for each point
+    left_handles = [
+        (-1.0, 0.0, 0.0),       # Left handle of first point (coincides with point)
+        (-0.5, 0.5, 0.0),       # Left handle of second point (influence from first point)
+        (0.5, 0.5, 0.0)         # Left handle of third point (influence from second point)
+    ]
+    
+    right_handles = [
+        (-0.5, -0.5, 0.0),      # Right handle of first point (downward direction)
+        (0.5, 1.5, 0.0),        # Right handle of second point (upward direction)
+        (1.0, 0.0, 0.0)         # Right handle of third point (coincides with point)
+    ]
+    
+    thickness = 0.2
+    
+    # Create the bezier spline
+    spline = fps.bezier_spline(points, left_handles, right_handles, thickness)
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        spline, "bezier_spline", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Bezier spline meshes differ: {py_stl} vs {cli_stl}"
+
+
+def test_bezier_spline_variable_thickness():
+    """Test the bezier_spline_variable_thickness shape."""
+    # Create points for the spline
+    points = [
+        (-4.0, 0.0, 0.0),     # Left point
+        (0.0, 0.0 ,0.0), 
+        (4.0, 0.0, 0.0),      # Right point
+    ]
+
+    # Define very different thicknesses for clear visual difference
+    radii = [
+        0.8,     # Left end (thicker)
+        1.0,
+        0.2      # Right end (thinner)
+    ]
+
+    # Create custom handles to make a clear curve between points
+    left_handles = [
+        (-4.0, 0.0, 0.0),      # Left point (coincides with point)
+        (0.0, 1.0, 0.0),
+        (0.0, -2.0, 0.0)       # Left handle of right point (curves below)
+    ]
+
+    right_handles = [
+        (0.0, 2.0, 0.0),       # Right handle of left point (curves above)
+        (0.0, -1.0, 0.0),
+        (4.0, 0.0, 0.0)        # Right point (coincides with point)
+    ]
+        
+    # Create the bezier spline with variable thickness
+    spline = fps.cubic_bezier_spline_variable_radius(points, left_handles, right_handles, radii=radii)
+    
+    # Test meshing with both methods and compare results
+    success, py_stl, cli_stl = shape_dual_meshing(
+        spline, "bezier_spline_variable", depth=TEST_DEPTH, scale=TEST_SCALE
+    )
+    
+    # Check that both meshes were created and are similar
+    assert success, f"Variable thickness bezier spline meshes differ: {py_stl} vs {cli_stl}"
+
+
 if __name__ == "__main__":
     # Run the tests
     pytest.main([__file__])
