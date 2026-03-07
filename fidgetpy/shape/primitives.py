@@ -619,9 +619,9 @@ def triangle(a=(-0.5, -0.5), b=(0.5, -0.5), c=(0, 0.5)):
         t2 = fps.triangle((0, 0), (1, 0), (0.5, 1))  # Creates a triangle with specified vertices
     """
     # Create half-planes for each edge of the triangle
-    h1 = half_plane(a, b)
-    h2 = half_plane(b, c)
-    h3 = half_plane(c, a)
+    h1 = half_plane(*a, *b)
+    h2 = half_plane(*b, *c)
+    h3 = half_plane(*c, *a)
     
     # The triangle is the intersection of the three half-planes
     # We don't know which way the triangle is wound, so we take the union

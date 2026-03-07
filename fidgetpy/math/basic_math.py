@@ -84,9 +84,9 @@ def sub(a, b):
     """
     if hasattr(a, '_is_sdf_expr') and hasattr(a, 'sub'):
         return a.sub(b)
-    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'sub'):
-        # If 'a' is not SDF but 'b' is, call b.sub(a)
-        return b.sub(a)
+    elif hasattr(b, '_is_sdf_expr'):
+        # a is a float, b is SDF: use Python operator so b.__rsub__(a) = a - b
+        return a - b
     elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return a - b
     else:
@@ -165,9 +165,9 @@ def div(a, b):
     """
     if hasattr(a, '_is_sdf_expr') and hasattr(a, 'div'):
         return a.div(b)
-    elif hasattr(b, '_is_sdf_expr') and hasattr(b, 'div'):
-        # If 'a' is not SDF but 'b' is, call b.div(a)
-        return b.div(a)
+    elif hasattr(b, '_is_sdf_expr'):
+        # a is a float, b is SDF: use Python operator so b.__rtruediv__(a) = a / b
+        return a / b
     elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return a / b
     else:
