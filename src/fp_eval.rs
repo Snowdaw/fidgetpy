@@ -301,30 +301,32 @@ pub fn eval_impl(
         pv.name.clone().unwrap_or_else(|| format!("{:?}", pv.var)) // Fallback to Var debug format if no name
     }).collect();
 
-    // Check for missing variables
+    // Tree-level variable names (before optimizer constant-folding). Used to
+    // distinguish optimizer false positives (e.g. y*0 → 0 drops y from VM,
+    // but y was genuinely in the tree) from genuine user mistakes (variable
+    // provided that never appeared in the expression at all).
+    let tree_var_names: HashSet<String> = sdf.var_names.values().cloned().collect();
+
     let missing_vars: Vec<String> = required_var_names
         .difference(&provided_var_names)
         .cloned()
         .collect();
 
-    // Check for extra variables
+    // Only flag extra vars that were never part of the tree expression.
     let extra_vars: Vec<String> = provided_var_names
         .difference(&required_var_names)
+        .filter(|v| !tree_var_names.contains(*v))
         .cloned()
         .collect();
 
-    // If there are either missing or unused variables, generate a combined error message
     if !missing_vars.is_empty() || !extra_vars.is_empty() {
         let mut error_message = String::from("Missing or unused variable(s) found in mapping:");
-        
         if !missing_vars.is_empty() {
             error_message.push_str(&format!("\nMissing: {}", missing_vars.join(", ")));
         }
-        
         if !extra_vars.is_empty() {
             error_message.push_str(&format!("\nUnused: {}", extra_vars.join(", ")));
         }
-        
         return Err(PyValueError::new_err(error_message));
     }
     // --- End Validation ---

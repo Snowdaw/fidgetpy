@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.24.1", features = ["extension-module"] }
-fidget = { path = "../fidget/fidget", default-features = false, features = ["jit"] } # Enable jit feature
+fidget = { path = "../fidget/fidget", default-features = false, features = ["jit", "mesh", "gui"] } # Enable jit, mesh, and gui features
 numpy = "0.24.0"
 ndarray = "0.16"
-nalgebra = "0.33"
+nalgebra = "0.34"
 

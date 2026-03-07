@@ -11,7 +11,8 @@ use fidget::context::{Context, Tree, TreeOp};
 use fidget::context::{BinaryOpcode, UnaryOpcode};
 use fidget::mesh::{Octree, Settings as MeshSettings, Mesh};
 use fidget::vm::VmShape;
-use fidget::render::{ThreadPool, View3};
+use fidget::render::ThreadPool;
+use fidget::gui::View3;
 use fidget::var::Var;
 use nalgebra::Vector3;
 use std::collections::HashMap;
@@ -341,15 +342,15 @@ pub fn mesh_impl(
     let settings = MeshSettings {
         depth: safe_depth,
         threads: thread_pool,
-        view,
+        world_to_model: view.world_to_model(),
+        ..Default::default()
     };
 
     // 6. Build Octree and Mesh using the original shape and settings
     let mesh_result: Mesh = py.allow_threads(move || {
-        // Pass the original initial_shape here
-        let octree = Octree::build(&initial_shape, settings);
-        // walk_dual uses the view from settings internally
-        octree.walk_dual(settings)
+        let octree = Octree::build(&initial_shape, &settings)
+            .expect("Meshing was unexpectedly cancelled");
+        octree.walk_dual()
     });
 
     // 7. Convert mesh data to ndarray::Array2 or Python lists

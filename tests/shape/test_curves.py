@@ -143,29 +143,29 @@ def test_bezier_spline_variable_thickness():
     """Test the bezier_spline_variable_thickness shape."""
     # Create points for the spline
     points = [
-        (-4.0, 0.0, 0.0),     # Left point
+        (-2.0, 0.0, 0.0),     # Left point
         (0.0, 0.0 ,0.0), 
-        (4.0, 0.0, 0.0),      # Right point
+        (2.0, 0.0, 0.0),      # Right point
     ]
 
     # Define very different thicknesses for clear visual difference
     radii = [
-        0.8,     # Left end (thicker)
-        1.0,
-        0.2      # Right end (thinner)
+        0.4,     # Left end (thicker)
+        0.5,
+        0.1      # Right end (thinner)
     ]
 
     # Create custom handles to make a clear curve between points
     left_handles = [
-        (-4.0, 0.0, 0.0),      # Left point (coincides with point)
-        (0.0, 1.0, 0.0),
+        (-2.0, 0.0, 0.0),      # Left point (coincides with point)
+        (0.0, 0.5, 0.0),
         (0.0, -2.0, 0.0)       # Left handle of right point (curves below)
     ]
 
     right_handles = [
-        (0.0, 2.0, 0.0),       # Right handle of left point (curves above)
-        (0.0, -1.0, 0.0),
-        (4.0, 0.0, 0.0)        # Right point (coincides with point)
+        (0.0, 1.0, 0.0),       # Right handle of left point (curves above)
+        (0.0, -0.5, 0.0),
+        (2.0, 0.0, 0.0)        # Right point (coincides with point)
     ]
         
     # Create the bezier spline with variable thickness
