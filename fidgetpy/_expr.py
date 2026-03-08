@@ -402,25 +402,25 @@ class Container:
         attributes for per-vertex colors and returns the path.
 
         Args:
-            output_file: Path for the output .ply file, or None to return PyMesh.
+            output_file: Path for the output .ply file, or None to return a Mesh.
             verbose:     Print progress when writing a file. Default True.
             **kwargs:    Passed to fp.mesh() (e.g. depth=6, numpy=True).
 
         Returns:
-            PyMesh: when output_file is None.
-            str:    path to the written .ply file when output_file is set.
+            Mesh: when output_file is None.
+            str:  path to the written .ply file when output_file is set.
 
         Raises:
             ValueError: If 'shape' attribute is not set.
 
         Examples:
-            m = fpc.mesh(depth=5)                       # returns PyMesh
+            m = fpc.mesh(depth=5)                       # returns Mesh
             fpc.mesh(output_file="sphere.ply", depth=6) # writes colored PLY
         """
         from fidgetpy import mesh as _mesh
         return _mesh(self, output_file=output_file, verbose=verbose, **kwargs)
 
-    def splat(self, output_file=None, **kwargs):
+    def splat(self, output_file=None, verbose=False, **kwargs):
         """
         Generate a Gaussian Splatting representation from this Container.
 
@@ -433,6 +433,7 @@ class Container:
         Args:
             output_file: Path for the output .ply file, or None to return
                          a Gaussians object. Default: None.
+            verbose:     Print progress information. Default False.
             **kwargs:    Passed to the splat function (size, domain, etc.).
 
         Returns:
@@ -442,20 +443,8 @@ class Container:
         Raises:
             ValueError: If 'shape' attribute is not set.
         """
-        shape = self._attrs.get('shape')
-        if shape is None:
-            raise ValueError(
-                "Container needs a 'shape' attribute for splat(). "
-                "Set it with: fpc.shape = some_sdf"
-            )
-        r = self._attrs.get('r')
-        g = self._attrs.get('g')
-        b = self._attrs.get('b')
-        r = 1.0 if r is None else r
-        g = 1.0 if g is None else g
-        b = 1.0 if b is None else b
-        from fidgetpy.splat import splat as _splat_fn
-        return _splat_fn(shape, output_file=output_file, color=(r, g, b), **kwargs)
+        from fidgetpy import splat as _splat
+        return _splat(self, output_file=output_file, verbose=verbose, **kwargs)
 
     # ── Repr ──────────────────────────────────────────────────────────────────
 

@@ -46,6 +46,54 @@ from . import math
 from . import splat as _splat_module
 from ._expr import Container as _Container
 
+# ── Mesh wrapper ──────────────────────────────────────────────────────────────
+
+class Mesh:
+    """
+    A triangle mesh returned by fp.mesh().
+
+    Attributes:
+        vertices   (N, 3) float32 — vertex positions.
+        triangles  (M, 3) int32  — triangle vertex indices.
+
+    Methods:
+        save(path, verbose=True) — write a binary PLY file.
+    """
+
+    def __init__(self, pymesh):
+        self._mesh = pymesh
+
+    @property
+    def vertices(self):
+        return self._mesh.vertices
+
+    @property
+    def triangles(self):
+        return self._mesh.triangles
+
+    def save(self, path, verbose=True):
+        """
+        Write a binary PLY file.
+
+        Args:
+            path:    Output file path.
+            verbose: Print a summary line. Default True.
+
+        Returns:
+            str: The path that was written.
+        """
+        import numpy as np
+        verts = np.asarray(self._mesh.vertices, dtype=np.float32)
+        tris  = np.asarray(self._mesh.triangles, dtype=np.int32)
+        _write_mesh_ply(path, verts, tris, colors_u8=None, verbose=verbose)
+        return path
+
+    def __repr__(self):
+        v = len(self._mesh.vertices)
+        t = len(self._mesh.triangles)
+        return f"Mesh(vertices={v:,}, triangles={t:,})"
+
+
 # ── Python wrappers that understand Container ──────────────────────────────────
 
 def to_vm(expr_or_container, output_file=None):
@@ -248,7 +296,7 @@ def mesh(expr_or_container, output_file=None, verbose=True, **kwargs):
         fp.mesh(fpc, output_file="red_sphere.ply", depth=6)
     """
     if output_file is None:
-        # Return PyMesh (no color evaluation needed)
+        # Return Mesh (no color evaluation needed)
         if isinstance(expr_or_container, _Container):
             shape = expr_or_container._attrs.get('shape')
             if shape is None:
@@ -257,7 +305,7 @@ def mesh(expr_or_container, output_file=None, verbose=True, **kwargs):
                     "Set it with: fpc.shape = some_sdf"
                 )
             expr_or_container = shape
-        return _mesh_rust(expr_or_container, **kwargs)
+        return Mesh(_mesh_rust(expr_or_container, **kwargs))
 
     # Write colored PLY file
     import numpy as np
@@ -303,7 +351,7 @@ def mesh(expr_or_container, output_file=None, verbose=True, **kwargs):
     return output_file
 
 
-def splat(expr_or_container, output_file=None, color=None, **kwargs):
+def splat(expr_or_container, output_file=None, color=None, verbose=False, **kwargs):
     """
     Convert a fidgetpy SDF expression or Container to a Gaussian Splatting representation.
 
@@ -320,6 +368,7 @@ def splat(expr_or_container, output_file=None, color=None, **kwargs):
         output_file:       Path to the output .ply file, or None to return a
                            Gaussians object. Default: None.
         color:             Color override. See fp.splat module for accepted forms.
+        verbose:           Print progress information. Default False.
         **kwargs:          Passed to the underlying splat function (size, domain, …).
 
     Returns:
@@ -362,12 +411,17 @@ def splat(expr_or_container, output_file=None, color=None, **kwargs):
             )
         expr_or_container = shape_attr
 
-    return _splat_module.splat(
+    result = _splat_module.splat(
         expr_or_container,
-        output_file=output_file,
+        output_file=None,   # always collect Gaussians first
         color=color,
+        verbose=verbose,    # controls computation progress only
         **kwargs,
     )
+    if output_file is not None:
+        result.save(output_file, verbose=True)  # file-write confirmation always shown
+        return output_file
+    return result
 
 
 
