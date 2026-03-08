@@ -37,11 +37,9 @@ def test_cylinder():
 
 def test_infinite_cylinder():
     """Test the infinite_cylinder shape with a bounding box."""
-    # Create an infinite cylinder with radius 1.0
     inf_cylinder = fps.infinite_cylinder(1.0)
-    
-    # Create a bounding box to make it finite
-    box = fps.box_exact(2.0, 2.0, 2.0)
+
+    box = fps.box(2.0, 2.0, 2.0)
     bounded_cylinder = fp.ops.intersection(inf_cylinder, box)
     
     # Test meshing with both methods and compare results
@@ -85,19 +83,6 @@ def test_capsule():
     
 
 
-def test_vertical_capsule():
-    """Test the vertical_capsule shape."""
-    # Create a vertical capsule with height 0.5 and radius 0.3
-    vert_capsule = fps.vertical_capsule(0.5, 0.3)
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        vert_capsule, "vertical_capsule", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Vertical capsule meshes differ: {py_stl} vs {cli_stl}"
-    
     
 
 

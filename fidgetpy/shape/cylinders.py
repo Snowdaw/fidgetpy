@@ -153,8 +153,7 @@ def bounded_infinite_cylinder(radius=1.0, bounds=(2.0, 2.0, 2.0), axis=(0, 1, 0)
     # Create the infinite cylinder
     inf_cyl = infinite_cylinder(radius, axis)
     
-    # Create the bounding box using box_exact for clean edges
-    bounding_box = fp.shape.box_exact(width, height, depth)
+    bounding_box = fp.shape.box(width, height, depth)
     
     # Intersect the cylinder with the box
     return fpm.max(inf_cyl, bounding_box)

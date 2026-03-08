@@ -50,39 +50,40 @@ def sphere(radius=1.0, center_x=0.0, center_y=0.0, center_z=0.0):
     
     return ((x - center_x)**2 + (y - center_y)**2 + (z - center_z)**2).sqrt() - radius
 
-def box_exact(width=1.0, height=1.0, depth=1.0):
+def box(width=1.0, height=1.0, depth=1.0):
     """
     Create a box centered at the origin with exact Euclidean distance.
-    
+
     This function creates an exact signed distance field for a box.
     The distance field is negative inside the box and positive outside,
     with the value representing the exact Euclidean distance to the surface.
-    
+    Gradients are well-behaved everywhere except at the edges and corners,
+    making this shape ideal for meshing and splatting.
+
     Args:
         width: The width of the box along the x-axis (must be positive)
         height: The height of the box along the y-axis (must be positive)
         depth: The depth of the box along the z-axis (must be positive)
-        
+
     Returns:
         An SDF expression representing a box centered at the origin
-        
+
     Raises:
         ValueError: If any dimension is negative or zero
-        
+
     Examples:
-        # Create a cube
-        cube = fps.box_exact(1.0, 1.0, 1.0)  # Creates a 1x1x1 cube
-        
-        # Create a rectangular box
-        rect_box = fps.box_exact(2.0, 1.0, 3.0)  # Creates a 2x1x3 box
-        
-        # Create a flat panel
-        panel = fps.box_exact(5.0, 5.0, 0.1)  # Creates a thin 5x5 panel
+        cube = fps.box(1.0, 1.0, 1.0)
+        rect_box = fps.box(2.0, 1.0, 3.0)
     """
     if width <= 0 or height <= 0 or depth <= 0:
         raise ValueError("Box dimensions must be positive")
-        
-    return rounded_box(width, height, depth, radius=0.01)
+
+    return rounded_box(width, height, depth, radius=0.0)
+
+
+def box_exact(width=1.0, height=1.0, depth=1.0):
+    """Alias for box(). Prefer fps.box()."""
+    return box(width, height, depth)
 
 def box_mitered(width=1.0, height=1.0, depth=1.0):
     """
@@ -129,28 +130,35 @@ def box_mitered(width=1.0, height=1.0, depth=1.0):
 def rectangle(width=1.0, height=1.0):
     """
     Create a 2D rectangle in the XY plane centered at the origin.
-    
+
+    This creates an exact Euclidean signed distance field for a rectangle.
+    The distance field is negative inside and positive outside, representing
+    the exact distance to the nearest edge.
+
     Args:
         width: The width of the rectangle along the x-axis (must be positive)
         height: The height of the rectangle along the y-axis (must be positive)
-        
+
     Returns:
-        An SDF expression representing a 2D rectangle
-        
+        An SDF expression representing a 2D rectangle with exact distance
+
     Raises:
         ValueError: If any dimension is negative or zero
+
+    Examples:
+        rect = fps.rectangle(2.0, 1.0)
+        slab = fps.extrude_z(rect, -0.5, 0.5)
     """
     if width <= 0 or height <= 0:
         raise ValueError("Rectangle dimensions must be positive")
-        
+
     x, y = fp.x(), fp.y()
-    half_width = width / 2.0
-    half_height = height / 2.0
-    
-    dx = x.abs() - half_width
-    dy = y.abs() - half_height
-    
-    return fpm.max(dx, dy)
+    dx = x.abs() - width / 2.0
+    dy = y.abs() - height / 2.0
+
+    inside = fpm.min(fpm.max(dx, dy), 0.0)
+    outside = (fpm.max(dx, 0.0)**2 + fpm.max(dy, 0.0)**2).sqrt()
+    return inside + outside
 
 
 def plane(normal=(0, 1, 0), offset=0):
@@ -228,8 +236,7 @@ def bounded_plane(normal=(0, 1, 0), offset=0, bounds=(2.0, 2.0, 2.0)):
     # Create the infinite plane
     infinite_plane = plane(normal, offset)
     
-    # Create the bounding box using box_exact for clean edges
-    bounding_box = box_exact(width, height, depth)
+    bounding_box = box(width, height, depth)
     
     # Intersect the plane with the box
     return fpm.max(infinite_plane, bounding_box)
@@ -355,10 +362,12 @@ def octahedron(size=1.0):
     # Compute m = |x| + |y| + |z| - size
     m = p_abs[0] + p_abs[1] + p_abs[2] - size
     
-    # Scale factor for the normalized distance
+    # Scale factor for the normalized distance.
+    # Note: this is an approximation (scaled L1 norm), not exact Euclidean
+    # distance. Gradients are piecewise constant (magnitude ≈ 1/sqrt(3)),
+    # which works reasonably well for meshing.
     k = 0.57735027  # 1/sqrt(3)
-    
-    # Return the distance to the octahedron
+
     return m * k
 
 def hexagonal_prism(radius=1.0, height=1.0):
@@ -761,23 +770,24 @@ def box_mitered_centered(width=1.0, height=1.0, depth=1.0, center_x=0.0, center_
 def gyroid(period=(1.0, 1.0, 1.0), thickness=0.1):
     """
     Create a gyroid surface.
-    
-    This function creates a signed distance field approximation of a gyroid surface.
-    The gyroid is a triply periodic minimal surface with interesting properties.
-    
+
+    **Warning:** This is NOT a valid signed distance field. The returned
+    expression is ``abs(implicit) - thickness`` where the underlying
+    implicit function has non-unit gradients (they vary in magnitude
+    across space). As a result, dual-contouring meshing will place
+    vertices incorrectly and produce distorted meshes. Suitable only
+    for visualization or boolean operations, not for high-quality meshing.
+
     Args:
         period: The period of the gyroid as (x_period, y_period, z_period)
         thickness: The thickness of the gyroid shell
-        
+
     Returns:
-        An SDF expression representing a gyroid surface
-        
+        An SDF-like expression representing a gyroid surface
+
     Examples:
-        # Create a default gyroid
-        g1 = fps.gyroid()  # Creates a gyroid with default parameters
-        
-        # Create a gyroid with custom parameters
-        g2 = fps.gyroid((2.0, 2.0, 2.0), 0.2)  # Creates a gyroid with period 2 and thickness 0.2
+        g1 = fps.gyroid()
+        g2 = fps.gyroid((2.0, 2.0, 2.0), 0.2)
     """
     px, py, pz = period
     

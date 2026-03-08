@@ -1,15 +1,18 @@
 # FidgetPy: Python Bindings for Fidget
 
-This project provides Python bindings for the [Fidget](https://github.com/mkeeter/fidget) library, allowing you to define and evaluate complex expressions of implicit surfaces efficiently in Python.
+This project provides Python bindings for the [Fidget](https://github.com/mkeeter/fidget) library, allowing you to define and evaluate complex Signed Distance Field (SDF) expressions efficiently in Python.
 
 ## Features
 
-*   Define expressions using a Pythonic API (method chaining or functional style).
+*   Define SDF expressions using a Pythonic API (method chaining or functional style).
 *   Supports standard mathematical operations (+, -, *, /, sqrt, sin, cos, abs, min, max, etc.).
-*   Includes operations like `smooth_union` and `translate`.
 *   Efficient bulk evaluation at many points simultaneously using NumPy arrays.
-*   Automatic selection of JIT (Just-In-Time) compiled backend for performance when available, with fallback to a VM interpreter.
+*   Automatic selection of JIT-compiled backend for performance, with fallback to a VM interpreter.
 *   Create and use custom variables within expressions.
+*   Named attribute containers (`fp.container`) for bundling geometry with color and other data.
+*   Export meshes directly to colored PLY files (per-vertex RGB via SDF expressions).
+*   Export to Gaussian Splatting `.ply` files.
+*   Import/export in VM format and F-Rep format.
 
 ## Installation
 
@@ -18,8 +21,7 @@ This project uses [`maturin`](https://www.maturin.rs/) to build the Rust extensi
 1.  **Set up a Python virtual environment:**
     ```bash
     python -m venv .venv
-    source .venv/bin/activate # Linux/macOS
-    # .venv\Scripts\activate # Windows
+    source .venv/bin/activate  # Linux/macOS
     ```
 2.  **Get dependencies:**
     ```bash
@@ -28,250 +30,262 @@ This project uses [`maturin`](https://www.maturin.rs/) to build the Rust extensi
     ```
 3.  **Build and install `fidgetpy` in editable mode:**
     ```bash
-    # Navigate to the fidgetpy directory
     cd fidgetpy
     maturin develop
     ```
-    **outside venv**:
+    **Outside venv:**
     ```bash
     cd fidgetpy
     maturin build --interpreter /your/python/interpreter/python
     /your/python/interpreter/python -m pip install target/wheels/fidgetpy-*.whl --force-reinstall
     ```
 
-Note that when running the tests with pytest in order for the shape tests to work you need to build Fidget with the fidget-cli demo as it is used for comparing meshes.
-
 ## Basic Usage
 
 ```python
 import fidgetpy as fp
+import fidgetpy.shape as fps
+import fidgetpy.math as fpm
+import numpy as np
 
-# --- Define Variables (Identity + Name) ---
-# Standard axes (var objects with names 'x', 'y', 'z')
+# Standard coordinate variables
 x = fp.x()
 y = fp.y()
 z = fp.z()
 
-# Custom variable (var object with name 'radius')
-radius = fp.var(name='radius')
+# Build an SDF expression
+sphere = fps.sphere(1.0)
+box    = fps.box_exact(width=1.0, height=1.0, depth=1.0)
 
-# --- Build Expressions (using var objects directly) ---
-# Var objects are implicitly promoted to expressions
-sphere_core = x*x + y*y + z*z
-sphere = sphere_core.sqrt() - radius # Sphere radius controlled by 'radius' variable
+# Combine shapes
+combined = fp.ops.smooth_union(sphere, box.translate(0.8, 0.0, 0.0), 0.2)
 
-# Create a box using methods directly (optional style)
-box_core = fp.x().abs().max(fp.y().abs()).max(fp.z().abs())
-box = box_core - 0.5 # Box size 1 (0.5 is implicitly promoted)
+# Evaluate a plain SDF at points
+pts = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32)
+vals = fp.eval(combined, pts)   # x/y/z mapped automatically
+print(vals)  # (N,) array of SDF distances
 
-# --- Transformations & Combinations ---
-# Translate the sphere
-translated_sphere = sphere.translate(1.5, 0.0, 0.0)
-
-# Smoothly combine the translated sphere and the box
-smoothness = 0.2
-combined_shape = fp.ops.smooth_union(translated_sphere, box, smoothness)
-
-# Print the expression structure (uses names from var objects)
-print(f"Combined Shape: {combined_shape}")
-# Example Output: add(mul(0.500, sub(add(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500)), sqrt(add(square(sub(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500))), square(0.200))))), mul(0.500, sub(add(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500)), sqrt(add(square(sub(sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), radius), sub(max(max(abs(x), abs(y)), abs(z)), 0.500))), square(0.200))))))
-
-# --- Evaluation ---
-# Define points as a list of lists or NumPy array (N, num_vars)
-# Columns must match the order of variables provided later!
-points = [
-    # x,   y,   z, radius
-    [0.0, 0.0, 0.0, 1.0],  # Origin, radius 1 -> dist = -1.0 (inside sphere)
-    [1.5, 0.0, 0.0, 1.0],  # Center of translated sphere, radius 1 -> dist = -1.0
-    [0.5, 0.0, 0.0, 1.0],  # Near box surface, radius 1
-    [3.0, 4.0, 0.0, 1.0],  # Far away, radius 1
-]
-
-# Define the list of *original var instances* corresponding to the columns
-# The order MUST match the columns in 'points'!
-variables_for_eval = [x, y, z, radius] # Use the var objects
-
-# Evaluate the by calling .eval() on the expression
-# Backend defaults to 'jit' if available, otherwise 'vm'
-distances = fp.eval(combined_shape, points, variables_for_eval)
-
-# Explicitly request VM backend
-# distances_vm = combined_shape.eval(points, variables_for_eval, backend='vm')
-
-print("\nEvaluation Points (x, y, z, radius):")
-print(points)
-print("\nDistances:")
-print(distances)
-
+# Evaluate all attributes of a Container at once
+fpc = fp.container()
+fpc.shape = fps.sphere(1.0)
+fpc.r = x * 0.5 + 0.5   # per-point expression
+fpc.g = 0.2              # constant
+results = fp.eval(fpc, pts)
+# {'shape': array([...]), 'r': array([...]), 'g': array([...])}
+print(results)
 ```
 
-## API Consistency & Error Messages
+## Module Organisation
 
-*   **Consistency:** The API offers both method chaining (`expr.sqrt()`) and functional (`fp.sqrt(expr)`) styles for most operations. Naming generally follows standard mathematical conventions.
-*   **Error Messages:** Efforts have been made to provide informative Python `ValueError` exceptions for issues like incorrect input shapes, invalid backend names, or invalid context handles. Errors originating from the core Fidget library (like `MismatchedSlices`) are also propagated with their original details.
+| Module | Contents |
+|--------|----------|
+| `fp` (root) | `x()`, `y()`, `z()`, `var()`, `eval()`, `mesh()`, `splat()`, `to_vm()`, `from_vm()`, `to_frep()`, `from_frep()`, `container()` |
+| `fp.shape` | Primitive shapes: `sphere`, `box`, `cylinder`, `cone`, `torus`, … |
+| `fp.ops` | Combining operations: `union`, `intersection`, `smooth_union`, `onion`, … |
+| `fp.math` | Math helpers: `clamp`, `mix`, `atan2`, `hsl`, `translate`, `rotate`, … |
 
-## Module Organization
+## Containers — Bundling Geometry with Color
 
-The library is organized into several modules for better organization:
-
-* **math:** Mathematical operations for expressions
-  * Basic math functions (min, max, clamp, abs, etc.)
-  * Trigonometric functions (sin, cos, tan, etc.)
-  * Vector math (length, dot, cross, etc.)
-  * Transformations (translate, scale, rotate, etc.)
-  * Domain manipulation (repeat, mirror, etc.)
-  * Interpolation functions (mix, smoothstep, etc.)
-  * Logical operations (logical_and, logical_or, etc.)
-
-* **ops:** specific operations
-  * Boolean operations (union, intersection, etc.)
-  * Blending operations (smooth_union, smooth_intersection, etc.)
-  * Domain operations (onion, elongate, etc.)
-
- * **shape:** basic shapes
-   * Primitive shapes (sphere, box, etc.)
-   * Cylinder shapes (cylinder, cone, etc.)
-   * Curve shapes (polyline, quadratic bezier, etc.)
-
-
-
-## Import/Export Functionality
-
-Fidget-Py provides functionality to import and export expressions in both VM format (Fidget's native format) and F-Rep (a human-readable functional representation format).
-
-### VM Format
-
-VM format is a low-level representation of operations used by Fidget internally. It's a simple text format where each line defines a variable, a constant, or an operation.
+A `Container` groups a geometry SDF with any number of named data attributes (colour r/g/b, PBR roughness/metallic, custom fields, etc.).
 
 ```python
 import fidgetpy as fp
+import fidgetpy.shape as fps
+import fidgetpy.math as fpm
 
-# Create an expression
-x, y, z = fp.x(), fp.y(), fp.z()
-sphere = ((x**2 + y**2 + z**2)**0.5) - 1.0  # Sphere with radius 1
+# fp.container() defaults to shape + r/g/b slots
+fpc = fp.container()
+fpc.shape = fps.sphere(1.0)
+fpc.r = 0.9
+fpc.g = 0.1
+fpc.b = 0.1
 
-# Convert to VM format
-vm_text = fp.to_vm(sphere)
-print(vm_text)
-# Output:
-# # Fidget VM format export
-# # Generated by fidget-py
-# _0 var-x
-# _1 var-y
-# _2 var-z
-# _3 mul _0 _0
-# _4 mul _1 _1
-# _5 mul _2 _2
-# _6 add _3 _4
-# _7 add _6 _5
-# _8 sqrt _7
-# _9 const 1
-# _a sub _8 _9
+# Custom slots
+fpc2 = fp.container("shape", "roughness", "metallic")
+fpc2.shape = fps.box_exact(1, 1, 1)
+fpc2.roughness = 0.4
+fpc2.metallic  = 0.8
 
-# Import from VM format
-imported_expr = fp.from_vm(vm_text)
+# Add / remove attributes after construction
+fpc.add("opacity")
+fpc.opacity = 0.8
+fpc.remove("opacity")
 ```
 
-### F-Rep Format
+### Proximity Paint
 
-F-Rep is a more human-readable functional representation format. It represents the expression as nested function calls.
+Blend attribute values near an SDF region surface:
+
+```python
+dot = fps.sphere(0.2).translate(0.5, 0.5, 0.0)
+fpc.paint(dot, r=0.1, g=0.9, b=0.1, width=0.08)   # green dot
+```
+
+The blend weight is `clamp(1 - sdf / width, 0, 1)`, so it is 1 inside the region and fades to 0 at `width` units outside.
+
+### Iterate over attributes
+
+```python
+for ch in fpc:
+    print(ch.name, ch.value)
+    vm_str = ch.to_vm()   # VM string for this attribute
+```
+
+## Meshing
+
+`fp.mesh()` is the single mesh function:
+
+- **No `output_file`** → returns a `PyMesh` object (`.vertices`, `.triangles`).
+- **With `output_file`** → writes a binary PLY file and returns the path. Per-vertex colors are written when the input is a Container with `r`/`g`/`b` attributes.
 
 ```python
 import fidgetpy as fp
+import fidgetpy.shape as fps
+import fidgetpy.math as fpm
+import math
 
-# Create an expression
-x, y, z = fp.x(), fp.y(), fp.z()
-sphere = ((x**2 + y**2 + z**2)**0.5) - 1.0  # Sphere with radius 1
+# Return PyMesh object
+m = fp.mesh(fps.sphere(1.0), depth=5)
+print(m.vertices.shape, m.triangles.shape)  # requires numpy=True for numpy arrays
 
-# Convert to F-Rep format
-frep_text = fp.to_frep(sphere)
-print(frep_text)
-# Output: sub(sqrt(add(add(mul(x, x), mul(y, y)), mul(z, z))), 1.000)
+# Write plain PLY (no vertex colors)
+fp.mesh(fps.sphere(1.0), output_file="sphere.ply", depth=6)
 
-imported_expr = fp.from_frep(frep_text)
+# Write colored PLY from a Container with solid color
+fpc = fp.container()
+fpc.shape = fps.sphere(1.0)
+fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1   # solid red
+fp.mesh(fpc, output_file="red_sphere.ply", depth=6)
+
+# Write colored PLY with procedural color (hue from angle around Z)
+angle = fpm.atan2(fp.y(), fp.x()) / (2 * math.pi) + 0.5
+rgb = fpm.hsl(angle, 1.0, 0.5)
+fpc.r = rgb['r']; fpc.g = rgb['g']; fpc.b = rgb['b']
+fp.mesh(fpc, output_file="color_wheel.ply", depth=7)
+
+# Container method — same as fp.mesh(fpc, output_file=...)
+fpc.mesh(output_file="sphere2.ply", depth=5)
 ```
 
-See the `vm_frep_example.py` file for more detailed examples of using these functions.
+### Viewing colored PLY in Blender
 
-## Meshing Functionality
+After importing the PLY file, vertex colors are stored but not displayed by default:
+- In the viewport: *Viewport Shading* dropdown → **Color: Vertex**.
+- In a material: add an *Attribute* node with name `Col` → connect to *Base Color*.
 
-Fidget-Py provides functionality to convert expressions into triangle meshes using the `fp.mesh()` function. This is useful for visualization and exporting to 3D modeling software.
+### Mesh parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `depth` | 4 | Octree subdivision depth (higher = more detail, slower) |
+| `numpy` | False | Return numpy arrays instead of Python lists |
+| `threads` | True | Use multithreading |
+| `bounds_min` | — | `[x, y, z]` minimum corner (preferred over center/scale) |
+| `bounds_max` | — | `[x, y, z]` maximum corner (preferred over center/scale) |
+| `center` | `[0,0,0]` | Center point (used when bounds not given) |
+| `scale` | 1.0 | Half-extent (used when bounds not given) |
+| `variables` | — | List of variable expressions for custom vars |
+| `variable_values` | — | Corresponding values |
+
+## Gaussian Splatting Export
+
+`fp.splat()` works the same way as `fp.mesh()`:
+
+- **No `output_file`** → returns a `Gaussians` object you can inspect and save later.
+- **With `output_file`** → writes a 3DGS-compatible `.ply` immediately and returns the path.
 
 ```python
 import fidgetpy as fp
 import fidgetpy.shape as fps
 
-# Create a sphere with radius 1.0
+# Return Gaussians object for inspection
+g = fp.splat(fps.sphere(1.0))
+print(g.count)            # number of Gaussians
+print(g.positions.shape)  # (N, 3)
+print(g.colors.shape)     # (N, 3), linear RGB in [0, 1]
+g.save("sphere.ply")      # write when ready
+
+# Write directly
+fp.splat(fps.sphere(1.0), output_file="sphere.ply")
+
+# Container with color
+fpc = fp.container()
+fpc.shape = fps.sphere(1.0)
+fpc.r = 0.2; fpc.g = 0.6; fpc.b = 1.0   # light blue
+fp.splat(fpc, output_file="blue_sphere.ply")
+
+# Container method
+fpc.splat(output_file="blue_sphere2.ply")
+```
+
+Key parameter: `size` controls the sampling grid resolution (`size³` points, default 96).
+
+The output can be loaded in any Gaussian Splatting viewer (e.g. [SuperSplat](https://supersplat.vercel.app/)).
+
+## Import / Export (VM and F-Rep)
+
+`fp.to_vm()` and `fp.to_frep()` follow the same pattern as `fp.mesh()` and `fp.splat()`:
+
+- **No `output_file`** → return text (str for a plain SDF, dict for a Container).
+- **With `output_file`** → write file(s) to disk and return the path(s).
+
+For a Container, one file is written per set attribute using `<stem>_<attr><ext>`.
+
+```python
+import fidgetpy as fp
+import fidgetpy.shape as fps
+
 sphere = fps.sphere(1.0)
 
-# Generate a mesh
-mesh = fp.mesh(sphere, bounds_min=[-1.2, -1.2, -1.2], bounds_max=[1.2, 1.2, 1.2])
+# VM format — return string
+vm_str = fp.to_vm(sphere)
+reimported = fp.from_vm(vm_str)
 
-# Access vertices and triangles
-vertices = mesh.vertices
-triangles = mesh.triangles
+# VM format — write to file
+fp.to_vm(sphere, output_file="sphere.vm")
 
-# Save as STL file
-fp.save_stl(mesh, "sphere.stl")
+# F-Rep format — return string
+frep_str = fp.to_frep(sphere)
+reimported2 = fp.from_frep(frep_str)
+
+# F-Rep format — write to file
+fp.to_frep(sphere, output_file="sphere.frep")
+
+# Container — return dicts
+fpc = fp.container()
+fpc.shape = fps.sphere(1.0)
+fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
+
+vms   = fp.to_vm(fpc)    # {'shape': '...', 'r': '...', 'g': '...', 'b': '...'}
+freps = fp.to_frep(fpc)  # same structure for F-Rep
+
+# Container — write one file per attribute
+fp.to_vm(fpc,   output_file="model.vm")
+# writes: model_shape.vm, model_r.vm, model_g.vm, model_b.vm
+
+fp.to_frep(fpc, output_file="model.frep")
+# writes: model_shape.frep, model_r.frep, model_g.frep, model_b.frep
 ```
 
-### Mesh Parameters
+Both `fp.to_vm()` and `fp.to_frep()` also work on Container objects directly as methods (returning dicts of strings, without file output).
 
-The `fp.mesh()` function supports several parameters to control the meshing process:
-
-* **bounds_min**: A list or tuple `[min_x, min_y, min_z]` specifying the minimum corner of the bounding box for meshing. This is the preferred way to define the meshing volume.
-* **bounds_max**: A list or tuple `[max_x, max_y, max_z]` specifying the maximum corner of the bounding box for meshing. This is the preferred way to define the meshing volume.
-* **depth**: Control the resolution of the mesh. Higher values produce more detailed meshes but take longer to generate. Default is 4.
-* **numpy**: If `True`, returns vertices and triangles as NumPy arrays. If `False` (default), returns them as Python lists.
-* **threads**: If `True` (default), uses multi-threading for mesh generation. Set to `False` for single-threaded operation.
-* **variables** and **variable_values**: Support for custom variables in the expression.
-* **center**: (Alternative) Specify the center point for meshing as `[x, y, z]`. Default is `[0, 0, 0]`. Ignored if `bounds_min` and `bounds_max` are provided.
-* **scale**: (Alternative) Scale factor for the result. Default is 1.0. Ignored if `bounds_min` and `bounds_max` are provided. Defines the default bounds as `[-scale, -scale, -scale]` to `[scale, scale, scale]` relative to `center`.
-
-### Meshing with Custom Variables
-
-You can mesh expressions that contain custom variables by providing the variables and their values:
+## Custom Variables
 
 ```python
 import fidgetpy as fp
 import fidgetpy.shape as fps
 
-# Create a shape with custom variables
 radius_var = fp.var("radius")
-height_var = fp.var("height")
+cylinder = fps.cylinder(radius_var, 2.0)
 
-# Create a cylinder with variable radius and height
-cylinder = fps.cylinder(radius_var, height_var)
+# Mesh with variable bound to a value
+variables = [fp.x(), fp.y(), fp.z(), radius_var]
+variable_values = [0.0, 0.0, 0.0, 1.5]
 
-# Define the variables and their values
-variables = [fp.x(), fp.y(), fp.z(), radius_var, height_var]
-variable_values = [0.0, 0.0, 0.0, 1.0, 2.0]  # x=0, y=0, z=0, radius=1.0, height=2.0
-
-# Generate the mesh
-mesh = fp.mesh(cylinder,
-               bounds_min=[-3,-3,-3],
-               bounds_max=[3,3,3],
-               depth=5,
-               variables=variables,
-               variable_values=variable_values)
+m = fp.mesh(cylinder,
+            bounds_min=[-3, -3, -3],
+            bounds_max=[ 3,  3,  3],
+            depth=5,
+            variables=variables,
+            variable_values=variable_values)
 ```
-
-## Exporting Meshes
-
-The `fp.save_stl()` function allows you to export meshes to the STL file format, which is widely supported by 3D printing software and CAD tools.
-
-```python
-import fidgetpy as fp
-import fidgetpy.shape as fps
-
-# Create a shape
-shape = fps.box(1.0, 1.0, 1.0)
-
-# Generate a mesh
-mesh = fp.mesh(shape, bounds_min=[-3,-3,-3], bounds_max=[3,3,3], depth=5)
-
-# Save as STL file
-fp.save_stl(mesh, "box.stl")
-```
-
-The `save_stl()` function works with both Python list and NumPy array mesh representations, so you can use it regardless of the `numpy` parameter you used when generating the mesh.

@@ -1,20 +1,14 @@
 """
 fidgetpy.splat — SDF → Gaussian Splatting converter.
 
-Converts any fidgetpy SDF expression into a 3D Gaussian Splatting .ply file
-suitable for viewing in SuperSplat, SIBR, or Gaussian Opacity Fields viewers.
+Converts any fidgetpy SDF expression into a Gaussians object or a Gaussian
+Splatting .ply file suitable for viewing in SuperSplat, SIBR, or Gaussian
+Opacity Fields viewers.
 
 Scale estimation uses the SDF Hessian to compute principal curvatures
 analytically, giving each Gaussian a correctly-shaped covariance ellipsoid:
 thin along the surface normal, wide along tangent directions with widths
 inversely proportional to principal curvatures.
-
-Usage:
-    import fidgetpy as fp
-    import fidgetpy.splat as fps
-
-    sdf = fp.shape.sphere(1.0)
-    fps.splat(sdf, output_file="sphere.ply")
 """
 
 import numpy as np
@@ -249,7 +243,7 @@ def _build_sh_features(color_rgb, normals, degree):
 #  PLY writer
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _write_ply(path, gaussians):
+def _write_ply(path, gaussians, verbose=True):
     """
     Write Gaussian Splatting .ply in the standard 3DGS binary format.
     Fields: x y z  nx ny nz  f_dc_0..2  f_rest_0..M  opacity
@@ -305,7 +299,67 @@ def _write_ply(path, gaussians):
         f.write(header.encode('ascii'))
         f.write(arr.tobytes())
 
-    print(f"  Wrote {N:,} Gaussians → {path}  ({arr.nbytes / 1e6:.2f} MB)")
+    if verbose:
+        print(f"  Wrote {N:,} Gaussians → {path}  ({arr.nbytes / 1e6:.2f} MB)")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Gaussians — inspectable result object
+# ──────────────────────────────────────────────────────────────────────────────
+
+class Gaussians:
+    """
+    A collection of Gaussian splats computed from an SDF.
+
+    Attributes:
+        positions   (N, 3) float64 — surface point positions.
+        normals     (N, 3) float64 — surface normals (unit vectors).
+        colors      (N, 3) float64 — linear RGB color in [0, 1].
+        scales      (N, 3) float64 — Gaussian radii (tangent1, tangent2, normal).
+        quaternions (N, 4) float64 — rotation quaternions [x, y, z, w].
+        count       int             — number of Gaussians.
+
+    Methods:
+        save(path, verbose=True) — write a 3DGS-compatible .ply file.
+    """
+
+    _C0 = 0.28209479177387814  # degree-0 SH normalisation constant
+
+    def __init__(self, gaussians_dict):
+        self.positions   = gaussians_dict['positions']
+        self.normals     = gaussians_dict['normals']
+        self.quaternions = gaussians_dict['quaternions']
+
+        # Expose linear-RGB colors (inverse of the log-odds SH encoding)
+        sh_dc = gaussians_dict['sh_dc']
+        self.colors = 1.0 / (1.0 + np.exp(-sh_dc * self._C0))
+
+        # Expose actual scale values (exp of the stored log-scale)
+        self.scales = np.exp(gaussians_dict['scales'])
+
+        # Keep raw data for saving
+        self._raw = gaussians_dict
+
+    @property
+    def count(self):
+        return len(self.positions)
+
+    def save(self, path, verbose=True):
+        """
+        Write a 3DGS-compatible binary PLY file.
+
+        Args:
+            path:    Output file path.
+            verbose: Print a summary line. Default True.
+
+        Returns:
+            str: The path that was written.
+        """
+        _write_ply(path, self._raw, verbose=verbose)
+        return path
+
+    def __repr__(self):
+        return f"Gaussians(count={self.count:,})"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -349,9 +403,9 @@ def _resolve_color(color, pts, N):
 
 def splat(
     expr,
-    output_file="gaussians.ply",
+    output_file=None,
     color=None,
-    grid_res=96,
+    size=96,
     domain=None,
     surface_thresh=0.02,
     max_gaussians=None,
@@ -364,15 +418,20 @@ def splat(
     verbose=True,
 ):
     """
-    Convert a fidgetpy SDF expression to a Gaussian Splatting .ply file.
+    Convert a fidgetpy SDF expression to a Gaussian Splatting representation.
 
     The SDF is sampled on a regular grid, surface candidates are extracted and
     refined via Newton projection, then each surface point becomes a Gaussian
     whose shape is derived from the local principal curvatures.
 
+    When output_file is None, returns a ``Gaussians`` object you can inspect
+    (positions, colors, normals, scales, quaternions) and save later.
+    When output_file is provided, writes the .ply immediately and returns the path.
+
     Args:
         expr:           A fidgetpy SDF expression using fp.x(), fp.y(), fp.z().
-        output_file:    Path to the output .ply file. Default: "gaussians.ply".
+        output_file:    Path to the output .ply file, or None to return a
+                        Gaussians object. Default: None.
         color:          Surface color.  Accepted forms:
 
                         ``None`` (default)
@@ -391,14 +450,9 @@ def splat(
 
                         callable ``(pts: ndarray(N,3)) -> ndarray(N,3)``
                             Arbitrary per-point color function returning linear
-                            RGB in [0, 1]::
+                            RGB in [0, 1].
 
-                                def my_color(pts):
-                                    return np.clip(pts * 0.5 + 0.5, 0, 1)
-
-                                fp.splat(sdf, color=my_color)
-
-        grid_res:       Sampling grid resolution (grid_res³ points). Default: 96.
+        size:           Sampling grid resolution (size³ points). Default: 96.
         domain:         (min, max) range for all three axes. If None (default),
                         the bounds are estimated automatically from a low-res mesh.
         surface_thresh: SDF value threshold for surface detection. Default: 0.02.
@@ -413,27 +467,23 @@ def splat(
         verbose:        Print progress information. Default: True.
 
     Returns:
-        str: Path to the written .ply file.
+        Gaussians: when output_file is None — inspectable object with .save().
+        str:       when output_file is set — path to the written .ply file.
 
     Examples:
         import fidgetpy as fp
         import fidgetpy.shape as fps
 
-        # Simple sphere, auto-detected bounds, white
+        # Return Gaussians object for inspection
+        g = fp.splat(fps.sphere(1.0))
+        print(g.count, g.positions.shape)  # inspect
+        g.save("sphere.ply")               # write later
+
+        # Write directly
         fp.splat(fps.sphere(1.0), output_file="sphere.ply")
 
         # Solid color
-        fp.splat(fps.sphere(1.0), color=(0.2, 0.6, 1.0))
-
-        # Per-channel fidgetpy expression
-        sdf = fps.box(1.0, 1.0, 1.0)
-        fp.splat(sdf, color=(fp.x() * 0.5 + 0.5, 0.3, fp.z() * 0.5 + 0.5))
-
-        # Callable (NumPy) color function
-        def my_color(pts):
-            return np.clip(pts * 0.5 + 0.5, 0, 1)
-
-        fp.splat(fps.sphere(1.0), color=my_color)
+        fp.splat(fps.sphere(1.0), color=(0.2, 0.6, 1.0), output_file="blue.ply")
     """
     t_total = time.time()
 
@@ -448,7 +498,7 @@ def splat(
     if verbose:
         print("=" * 60)
         print("  SDF → Gaussian Splatting Converter (fidgetpy)")
-        print(f"  Grid: {grid_res}³  |  SH degree: {sh_degree}")
+        print(f"  Grid: {size}³  |  SH degree: {sh_degree}")
         print(f"  Domain: {domain}  |  Surface thresh: {surface_thresh}")
         print("=" * 60)
 
@@ -456,8 +506,8 @@ def splat(
     if verbose:
         print("\n[1/5] Sampling SDF grid...")
     lo, hi = domain
-    voxel_size = (hi - lo) / grid_res
-    coords = np.linspace(lo, hi, grid_res)
+    voxel_size = (hi - lo) / size
+    coords = np.linspace(lo, hi, size)
     gx, gy, gz = np.meshgrid(coords, coords, coords, indexing='ij')
     pts_all = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=-1).astype(np.float64)
 
@@ -476,13 +526,14 @@ def splat(
 
     if len(pts_surf) == 0:
         raise RuntimeError(
-            "No surface found — try increasing surface_thresh or grid_res, "
+            "No surface found — try increasing surface_thresh or size, "
             "or check that your SDF fits within the domain."
         )
 
     # Newton refinement: project candidates onto the true zero-level set
     if verbose:
         print("  Projecting candidates onto zero-level set (Newton refinement)...")
+    pts_start = pts_surf.copy()
     for _ in range(5):
         d_cur = _eval_sdf_at(expr, pts_surf)
         grad_cur = _compute_gradient(expr, pts_surf, h=h_grad)
@@ -491,8 +542,19 @@ def splat(
         pts_surf = pts_surf - d_cur[:, np.newaxis] * n_cur
 
     d_final = _eval_sdf_at(expr, pts_surf)
+
+    # Discard floaters: candidates that drifted far from their grid origin during
+    # projection landed on a different surface (common with smooth-blend SDFs where
+    # |∇SDF| ≠ 1 in blend zones).  Keep only those within 3 voxels of their start.
+    displacement = np.linalg.norm(pts_surf - pts_start, axis=-1)
+    keep = displacement < voxel_size * 3.0
+    pts_surf = pts_surf[keep]
+    d_final = d_final[keep]
+
     if verbose:
-        print(f"  After projection: max |SDF| = {np.abs(d_final).max():.2e}")
+        n_floaters = (~keep).sum()
+        print(f"  After projection: max |SDF| = {np.abs(d_final).max():.2e}"
+              + (f"  |  removed {n_floaters:,} floaters" if n_floaters else ""))
 
     # Optional subsample
     if max_gaussians is not None and len(pts_surf) > max_gaussians:
@@ -533,13 +595,9 @@ def splat(
     laplacian = hessians[:, 0, 0] + hessians[:, 1, 1] + hessians[:, 2, 2]
     feature_scale = np.clip(1.0 / (np.abs(laplacian) + 0.5), scale_min, scale_max)
 
-    s_t1 = np.minimum(
-        np.clip(1.0 / (np.abs(kappa1) + 0.3), scale_min, scale_max), feature_scale
-    )
-    s_t2 = np.minimum(
-        np.clip(1.0 / (np.abs(kappa2) + 0.3), scale_min, scale_max), feature_scale
-    )
-    s_n = np.full(N, voxel_size * 0.5)  # thin along the surface normal
+    s_t1 = np.minimum(np.clip(1.0 / (np.abs(kappa1) + 0.3), scale_min, scale_max), feature_scale)
+    s_t2 = np.minimum(np.clip(1.0 / (np.abs(kappa2) + 0.3), scale_min, scale_max), feature_scale)
+    s_n = np.full(N, voxel_size * 0.5)  # thin along normal; must stay non-zero for silhouette coverage
 
     # 3DGS stores log(scale)
     log_scales = np.stack([
@@ -561,7 +619,7 @@ def splat(
     sh_dc = sh_all[:, :3]
     sh_rest = sh_all[:, 3:] if sh_degree > 0 else np.zeros((N, 0))
 
-    gaussians = {
+    gaussians_dict = {
         'positions':   pts_surf,
         'normals':     normals,
         'sh_dc':       sh_dc,
@@ -571,12 +629,15 @@ def splat(
         'quaternions': quats,
     }
 
-    _write_ply(output_file, gaussians)
+    result = Gaussians(gaussians_dict)
 
     if verbose:
         print(f"\n✓ Total time: {time.time() - t_total:.2f}s")
         print(f"  SH degree {sh_degree} → {n_coeffs} coefficients × 3 channels")
-        print(f"  To view: open {output_file} in SuperSplat (https://supersplat.app)")
         print("=" * 60)
 
-    return output_file
+    if output_file is not None:
+        result.save(output_file, verbose=verbose)
+        return output_file
+
+    return result

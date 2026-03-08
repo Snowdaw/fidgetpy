@@ -26,7 +26,7 @@ This module has been removed.  Use the Container API instead:
     fpc.paint(dot, r=0.1, g=0.9, b=0.1)
 
     # Export / render
-    fp.vm(fpc)          # dict {name: vm_string}
+    fp.to_vm(fpc)       # dict {name: vm_string}
     fp.splat(fpc)       # Gaussian splatting .ply
     fpc.mesh()          # triangle mesh
 """

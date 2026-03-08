@@ -12,8 +12,8 @@ Usage:
     import fidgetpy.shape as fps
     import fidgetpy.math as fpm
 
-    # Declare attribute names, then fill them in
-    fpc = fp.container("shape", "r", "g", "b")
+    # Default container already has shape, r, g, b slots
+    fpc = fp.container()
     fpc.shape = fps.sphere(1.0)
     fpc.r = 0.9
     fpc.g = 0.1
@@ -29,14 +29,14 @@ Usage:
     fpc.paint(dot, r=0.1, g=0.9, b=0.1, width=0.08)
 
     # Export
-    fp.vm(fpc)         # dict {name: vm_string} for all set attributes
+    fp.to_vm(fpc)      # dict {name: vm_string} for all set attributes
     fpc.mesh()         # mesh from 'shape'
     fpc.splat()        # Gaussian splat from 'shape' + r/g/b
 
     # Iterate
     for ch in fpc:
         with open(ch.name + ".vm", "w") as f:
-            f.write(ch.vm())
+            f.write(ch.to_vm())
 """
 
 
@@ -62,21 +62,27 @@ class ChannelEntry:
         self.name  = name
         self.value = value
 
-    def vm(self):
-        """Return the VM string for this attribute's SDF expression."""
+    def _coerce_to_expr(self):
+        """Return an SDF expression for this attribute's value (wraps floats)."""
         if self.value is None:
             raise ValueError(
                 f"Attribute '{self.name}' has no value set. "
                 f"Assign a value before exporting: fpc.{self.name} = ..."
             )
         if isinstance(self.value, (int, float)):
-            # Represent the constant as a trivial expression x*0 + c
-            from fidgetpy.fidgetpy import x as _x, to_vm as _to_vm
-            expr = _x() * 0.0 + float(self.value)
-        else:
-            expr = self.value
-            from fidgetpy.fidgetpy import to_vm as _to_vm
-        return _to_vm(expr)
+            from fidgetpy.fidgetpy import x as _x
+            return _x() * 0.0 + float(self.value)
+        return self.value
+
+    def to_vm(self):
+        """Return the VM string for this attribute's SDF expression."""
+        from fidgetpy.fidgetpy import to_vm as _to_vm
+        return _to_vm(self._coerce_to_expr())
+
+    def to_frep(self):
+        """Return the F-Rep string for this attribute's SDF expression."""
+        from fidgetpy.fidgetpy import to_frep as _to_frep
+        return _to_frep(self._coerce_to_expr())
 
     def __repr__(self):
         return f"ChannelEntry({self.name!r}, {self.value!r})"
@@ -130,7 +136,7 @@ class Container:
 
     Export
     ------
-        fp.vm(fpc)       # dict {name: vm_string} for all set attributes
+        fp.to_vm(fpc)    # dict {name: vm_string} for all set attributes
         fpc.mesh()       # mesh from 'shape' attribute
         fpc.splat()      # Gaussian splat using 'shape' + r/g/b
 
@@ -138,7 +144,7 @@ class Container:
     ---------
         for ch in fpc:
             with open(ch.name + ".vm", "w") as f:
-                f.write(ch.vm())
+                f.write(ch.to_vm())
     """
 
     # We override __setattr__ and __getattr__ so that attribute access on the
@@ -205,9 +211,6 @@ class Container:
         Args:
             *names: String attribute names.
 
-        Returns:
-            self (for chaining).
-
         Example:
             fpc.add("roughness")
             fpc.roughness = 0.4
@@ -220,7 +223,6 @@ class Container:
                 )
             if name not in self._attrs:
                 self._attrs[name] = None
-        return self
 
     def update(self, name, value):
         """
@@ -229,9 +231,6 @@ class Container:
         Args:
             name:  Attribute name (str).
             value: New value (float or SDF expression).
-
-        Returns:
-            self (for chaining).
 
         Raises:
             KeyError: If the attribute has not been declared.
@@ -246,7 +245,6 @@ class Container:
                 f"or assign directly: fpc.{name} = value"
             )
         self._attrs[name] = value
-        return self
 
     def remove(self, *names):
         """
@@ -254,9 +252,6 @@ class Container:
 
         Args:
             *names: String attribute names to remove.
-
-        Returns:
-            self (for chaining).
 
         Raises:
             KeyError: If any attribute does not exist.
@@ -268,7 +263,6 @@ class Container:
             if name not in self._attrs:
                 raise KeyError(f"Container has no attribute '{name}'")
             del self._attrs[name]
-        return self
 
     # ── Paint (proximity blend) ───────────────────────────────────────────────
 
@@ -336,7 +330,7 @@ class Container:
 
     # ── VM export ─────────────────────────────────────────────────────────────
 
-    def vm(self):
+    def to_vm(self):
         """
         Export all set attributes to VM format.
 
@@ -344,7 +338,7 @@ class Container:
             dict {name: vm_string} for every attribute with a non-None value.
 
         Example:
-            vms = fpc.vm()
+            vms = fpc.to_vm()
             for name, vm_str in vms.items():
                 with open(f"{name}.vm", "w") as f:
                     f.write(vm_str)
@@ -352,73 +346,98 @@ class Container:
         result = {}
         for entry in self:
             if entry.value is not None:
-                result[entry.name] = entry.vm()
+                result[entry.name] = entry.to_vm()
         return result
+
+    def to_frep(self):
+        """
+        Export all set attributes to F-Rep format.
+
+        Returns:
+            dict {name: frep_string} for every attribute with a non-None value.
+
+        Example:
+            freps = fpc.to_frep()
+            for name, frep_str in freps.items():
+                with open(f"{name}.frep", "w") as f:
+                    f.write(frep_str)
+        """
+        result = {}
+        for entry in self:
+            if entry.value is not None:
+                result[entry.name] = entry.to_frep()
+        return result
+
+    def eval(self, points, variables=None, **kwargs):
+        """
+        Evaluate all set attributes at a set of points.
+
+        Equivalent to ``fp.eval(self, points, ...)``.
+
+        Args:
+            points:    (N, 3) array of xyz coordinates.
+            variables: Optional list of variable expressions. When None,
+                       x/y/z are used automatically for expression attributes.
+            **kwargs:  Passed to the underlying Rust eval function.
+
+        Returns:
+            dict {name: (N,) array} for every set attribute.
+
+        Example:
+            pts = np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float32)
+            results = fpc.eval(pts)
+            # {'shape': array([...]), 'r': array([...]), ...}
+        """
+        from fidgetpy import eval as _eval
+        return _eval(self, points, variables=variables, **kwargs)
 
     # ── Geometry / rendering operations ───────────────────────────────────────
 
-    def mesh(self, **kwargs):
+    def mesh(self, output_file=None, verbose=True, **kwargs):
         """
         Generate a mesh from the 'shape' attribute.
 
-        Args:
-            **kwargs: Passed to fp.mesh() (e.g. depth=6, numpy=True).
-
-        Returns:
-            A Mesh object with .vertices and .triangles.
-
-        Raises:
-            ValueError: If 'shape' attribute is not set.
-        """
-        shape = self._attrs.get('shape')
-        if shape is None:
-            raise ValueError(
-                "Container needs a 'shape' attribute for mesh(). "
-                "Set it with: fpc.shape = some_sdf"
-            )
-        from fidgetpy.fidgetpy import mesh as _mesh_rust
-        return _mesh_rust(shape, **kwargs)
-
-    def mesh_ply(self, output_file="mesh.ply", **kwargs):
-        """
-        Mesh this Container and write a colored PLY file.
-
-        Uses the 'shape' attribute for geometry and 'r', 'g', 'b' attributes
-        for per-vertex colors (floats or fidgetpy expressions).  Unset color
-        channels default to 1.0 (white).
+        When output_file is None, returns a Mesh object (vertices + triangles).
+        When output_file is provided, writes a colored PLY using 'r', 'g', 'b'
+        attributes for per-vertex colors and returns the path.
 
         Args:
-            output_file: Path for the output .ply file.  Default: "mesh.ply".
-            **kwargs:    Passed to fp.mesh() (e.g. depth=6).
+            output_file: Path for the output .ply file, or None to return PyMesh.
+            verbose:     Print progress when writing a file. Default True.
+            **kwargs:    Passed to fp.mesh() (e.g. depth=6, numpy=True).
 
         Returns:
-            str: Path to the written .ply file.
+            PyMesh: when output_file is None.
+            str:    path to the written .ply file when output_file is set.
 
         Raises:
             ValueError: If 'shape' attribute is not set.
 
-        Example:
-            fpc = fp.container("shape", "r", "g", "b")
-            fpc.shape = fps.sphere(1.0)
-            fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
-            fpc.mesh_ply("red_sphere.ply", depth=6)
+        Examples:
+            m = fpc.mesh(depth=5)                       # returns PyMesh
+            fpc.mesh(output_file="sphere.ply", depth=6) # writes colored PLY
         """
-        from fidgetpy import mesh_ply as _mesh_ply
-        return _mesh_ply(self, output_file=output_file, **kwargs)
+        from fidgetpy import mesh as _mesh
+        return _mesh(self, output_file=output_file, verbose=verbose, **kwargs)
 
-    def splat(self, output_file="gaussians.ply", **kwargs):
+    def splat(self, output_file=None, **kwargs):
         """
-        Generate a Gaussian Splatting .ply from this Container.
+        Generate a Gaussian Splatting representation from this Container.
 
         Uses the 'shape' attribute for geometry.
         Uses 'r', 'g', 'b' attributes for colour (defaults to 1.0 = white).
 
+        When output_file is None, returns a Gaussians object for inspection.
+        When output_file is provided, writes a .ply file and returns the path.
+
         Args:
-            output_file: Path for the output .ply file.
-            **kwargs:    Passed to the splat function (grid_res, domain, etc.).
+            output_file: Path for the output .ply file, or None to return
+                         a Gaussians object. Default: None.
+            **kwargs:    Passed to the splat function (size, domain, etc.).
 
         Returns:
-            str: Path to the written .ply file.
+            Gaussians: when output_file is None.
+            str:       path to the written .ply file when output_file is set.
 
         Raises:
             ValueError: If 'shape' attribute is not set.

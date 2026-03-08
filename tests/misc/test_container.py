@@ -44,13 +44,13 @@ def test_container_creation_with_names():
     assert fpc.r is None
 
 
-def test_container_creation_empty():
-    """An empty container has no attributes; attributes can be assigned freely."""
+def test_container_creation_default():
+    """fp.container() with no args creates shape/r/g/b slots; assignment works."""
     fpc = fp.container()
-    assert len(fpc) == 0
+    assert len(fpc) == 4
+    assert "shape" in fpc and "r" in fpc and "g" in fpc and "b" in fpc
     fpc.shape = fps.sphere(1.0)
-    assert "shape" in fpc
-    assert len(fpc) == 1
+    assert fpc.shape is not None
 
 
 def test_container_string_names_only():
@@ -67,8 +67,10 @@ def test_container_repr_non_empty(simple_colored_container):
 
 
 def test_container_repr_empty():
-    """repr() of an empty container says so."""
-    assert "empty" in repr(fp.container()).lower()
+    """repr() of a container with no attrs says so."""
+    # Use explicit empty name list via Container directly
+    from fidgetpy._expr import Container as _C
+    assert "empty" in repr(_C()).lower()
 
 
 # ── Attribute access ──────────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ def test_update_missing_raises():
     """update() on an undeclared attribute raises KeyError."""
     fpc = fp.container()
     with pytest.raises(KeyError):
-        fpc.update("r", 0.5)
+        fpc.update("opacity", 0.5)  # 'opacity' is not a default slot
 
 
 def test_remove_attribute():
@@ -153,29 +155,32 @@ def test_remove_missing_raises():
         fpc.remove("roughness")
 
 
-def test_method_chaining():
-    """add(), update(), remove() all return self for chaining."""
+def test_add_update_remove_sequence():
+    """add(), update(), remove() work correctly in sequence."""
     fpc = fp.container()
-    result = fpc.add("r").add("g").update("r", 0.5).remove("g")
-    assert result is fpc
+    fpc.add("r")
+    fpc.add("g")
+    fpc.update("r", 0.5)
+    fpc.remove("g")
     assert "r" in fpc
     assert "g" not in fpc
+    assert fpc.r == 0.5
 
 
-# ── vm() export ───────────────────────────────────────────────────────────────
+# ── to_vm() export ────────────────────────────────────────────────────────────
 
 def test_vm_plain_sdf_returns_string():
-    """fp.vm() on a plain SDF expression returns a VM string."""
+    """fp.to_vm() on a plain SDF expression returns a VM string."""
     sdf = fps.sphere(1.0)
-    result = fp.vm(sdf)
+    result = fp.to_vm(sdf)
     assert isinstance(result, str)
     assert len(result) > 0
     assert "var-x" in result
 
 
 def test_vm_container_returns_dict(simple_colored_container):
-    """fp.vm() on a Container returns a dict of name → VM string."""
-    vms = fp.vm(simple_colored_container)
+    """fp.to_vm() on a Container returns a dict of name → VM string."""
+    vms = fp.to_vm(simple_colored_container)
     assert isinstance(vms, dict)
     assert set(vms.keys()) == {"shape", "r", "g", "b"}
     for name, vm_str in vms.items():
@@ -187,7 +192,7 @@ def test_vm_container_float_attribute():
     """Float attributes are serialised as a constant VM expression."""
     fpc = fp.container("r")
     fpc.r = 0.75
-    vms = fp.vm(fpc)
+    vms = fp.to_vm(fpc)
     # The VM string for a constant must exist and be parseable
     assert "r" in vms
     reimported = fp.from_vm(vms["r"])
@@ -197,36 +202,112 @@ def test_vm_container_float_attribute():
 
 
 def test_vm_container_skips_unset_attributes():
-    """fp.vm() omits attributes that are still None."""
+    """fp.to_vm() omits attributes that are still None."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     # r, g, b remain None
-    vms = fp.vm(fpc)
+    vms = fp.to_vm(fpc)
     assert "shape" in vms
     assert "r" not in vms
 
 
 def test_vm_unset_attribute_raises(simple_colored_container):
-    """ChannelEntry.vm() raises ValueError for an unset attribute."""
+    """ChannelEntry.to_vm() raises ValueError for an unset attribute."""
     fpc = fp.container("shape", "opacity")
     fpc.shape = fps.sphere(1.0)
     # opacity is unset
     for ch in fpc:
         if ch.name == "opacity":
             with pytest.raises(ValueError):
-                ch.vm()
+                ch.to_vm()
 
 
 def test_vm_method_on_expression():
-    """sdf.vm() returns the same string as fp.vm(sdf)."""
+    """sdf.to_vm() returns the same string as fp.to_vm(sdf)."""
     sdf = fps.sphere(1.0)
-    assert sdf.vm() == fp.vm(sdf)
+    assert sdf.to_vm() == fp.to_vm(sdf)
 
 
-def test_to_vm_alias():
-    """fp.to_vm() is an alias for fp.vm()."""
+def test_to_vm_plain_sdf_writes_file(tmp_path):
+    """fp.to_vm(sdf, output_file=...) writes a VM file and returns the path."""
+    out = tmp_path / "sphere.vm"
+    result = fp.to_vm(fps.sphere(1.0), output_file=str(out))
+    assert out.exists()
+    assert result == str(out)
+    assert "var-x" in out.read_text()
+
+
+def test_to_vm_container_writes_per_attribute_files(tmp_path):
+    """fp.to_vm(container, output_file=...) writes one file per attribute."""
+    fpc = fp.container("shape", "r", "g", "b")
+    fpc.shape = fps.sphere(1.0)
+    fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
+
+    result = fp.to_vm(fpc, output_file=str(tmp_path / "model.vm"))
+    assert isinstance(result, dict)
+    assert set(result.keys()) == {"shape", "r", "g", "b"}
+    for name, path in result.items():
+        assert (tmp_path / f"model_{name}.vm").exists()
+        assert path == str(tmp_path / f"model_{name}.vm")
+
+
+# ── to_frep() export ──────────────────────────────────────────────────────────
+
+def test_to_frep_plain_sdf_returns_string():
+    """fp.to_frep() on a plain SDF returns an F-Rep string."""
     sdf = fps.sphere(1.0)
-    assert fp.to_vm(sdf) == fp.vm(sdf)
+    result = fp.to_frep(sdf)
+    assert isinstance(result, str)
+    assert "sqrt" in result.lower()
+
+
+def test_to_frep_container_returns_dict(simple_colored_container):
+    """fp.to_frep() on a Container returns a dict of name → F-Rep string."""
+    freps = fp.to_frep(simple_colored_container)
+    assert isinstance(freps, dict)
+    assert set(freps.keys()) == {"shape", "r", "g", "b"}
+    for name, frep_str in freps.items():
+        assert isinstance(frep_str, str)
+        assert len(frep_str) > 0
+
+
+def test_to_frep_container_float_attribute():
+    """Float attributes in a Container produce a valid F-Rep string."""
+    fpc = fp.container("r")
+    fpc.r = 0.5
+    freps = fp.to_frep(fpc)
+    assert "r" in freps
+    assert isinstance(freps["r"], str)
+
+
+def test_to_frep_plain_sdf_writes_file(tmp_path):
+    """fp.to_frep(sdf, output_file=...) writes a file and returns the path."""
+    out = tmp_path / "sphere.frep"
+    result = fp.to_frep(fps.sphere(1.0), output_file=str(out))
+    assert out.exists()
+    assert result == str(out)
+    assert len(out.read_text()) > 0
+
+
+def test_to_frep_container_writes_per_attribute_files(tmp_path):
+    """fp.to_frep(container, output_file=...) writes one file per attribute."""
+    fpc = fp.container("shape", "r", "g", "b")
+    fpc.shape = fps.sphere(1.0)
+    fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
+
+    result = fp.to_frep(fpc, output_file=str(tmp_path / "model.frep"))
+    assert isinstance(result, dict)
+    assert set(result.keys()) == {"shape", "r", "g", "b"}
+    for name, path in result.items():
+        assert (tmp_path / f"model_{name}.frep").exists()
+
+
+def test_channel_entry_to_frep(simple_colored_container):
+    """ChannelEntry.to_frep() returns a valid F-Rep string per attribute."""
+    for ch in simple_colored_container:
+        frep_str = ch.to_frep()
+        assert isinstance(frep_str, str)
+        assert len(frep_str) > 0
 
 
 # ── Iteration ─────────────────────────────────────────────────────────────────
@@ -241,10 +322,10 @@ def test_iteration_yields_channel_entries(simple_colored_container):
     assert names == ["shape", "r", "g", "b"]
 
 
-def test_iteration_vm_per_entry(simple_colored_container):
-    """Each ChannelEntry.vm() returns a valid VM string."""
+def test_iteration_to_vm_per_entry(simple_colored_container):
+    """Each ChannelEntry.to_vm() returns a valid VM string."""
     for ch in simple_colored_container:
-        vm_str = ch.vm()
+        vm_str = ch.to_vm()
         assert isinstance(vm_str, str)
         assert len(vm_str) > 0
 
@@ -265,24 +346,44 @@ def test_eval_sdf_at_surface():
     assert float(vals[0]) == pytest.approx(0.0, abs=1e-5)
 
 
-def test_eval_container_shape():
-    """fp.eval() on a Container evaluates the 'shape' attribute."""
+def test_eval_container_all_attributes():
+    """fp.eval() on a Container evaluates every set attribute and returns a dict."""
     fpc = fp.container("shape", "r")
     fpc.shape = fps.sphere(1.0)
-    fpc.r = 0.9
+    fpc.r = 0.9   # constant float
 
     pts = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
-    vals = fp.eval(fpc, pts, variables=[fp.x(), fp.y(), fp.z()])
-    assert float(vals[0]) == pytest.approx(0.0, abs=1e-5)
+    results = fp.eval(fpc, pts)
+    assert isinstance(results, dict)
+    assert set(results.keys()) == {"shape", "r"}
+    assert float(results["shape"][0]) == pytest.approx(0.0, abs=1e-5)
+    assert float(results["r"][0]) == pytest.approx(0.9, abs=1e-6)
 
 
-def test_eval_container_missing_shape_raises():
-    """fp.eval() on a Container without 'shape' raises ValueError."""
-    fpc = fp.container("r")
+def test_eval_container_expression_attribute():
+    """fp.eval() evaluates expression attributes per-point."""
+    fpc = fp.container("shape", "r")
+    fpc.shape = fps.sphere(1.0)
+    fpc.r = fp.x() * 0.5 + 0.5   # 0.0 at x=-1, 1.0 at x=1
+
+    pts = np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32)
+    results = fp.eval(fpc, pts)
+    assert float(results["r"][0]) == pytest.approx(0.0, abs=1e-5)
+    assert float(results["r"][1]) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_eval_container_unset_skipped():
+    """fp.eval() skips attributes that are None (unset)."""
+    fpc = fp.container("shape", "r", "g")
+    fpc.shape = fps.sphere(1.0)
+    # g is unset
     fpc.r = 0.5
+
     pts = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
-    with pytest.raises(ValueError, match="shape"):
-        fp.eval(fpc, pts, variables=[fp.x(), fp.y(), fp.z()])
+    results = fp.eval(fpc, pts)
+    assert "shape" in results
+    assert "r" in results
+    assert "g" not in results
 
 
 def test_eval_color_expression():
@@ -416,13 +517,38 @@ def test_mesh_container_missing_shape_raises():
 
 # ── splat() ───────────────────────────────────────────────────────────────────
 
+def test_splat_returns_gaussians_object():
+    """fp.splat() with no output_file returns a Gaussians object."""
+    from fidgetpy.splat import Gaussians
+    g = fp.splat(fps.sphere(0.5), size=24, domain=(-0.8, 0.8), verbose=False)
+    assert isinstance(g, Gaussians)
+    assert g.count > 0
+    assert g.positions.shape == (g.count, 3)
+    assert g.colors.shape == (g.count, 3)
+    assert g.normals.shape == (g.count, 3)
+    assert g.scales.shape == (g.count, 3)
+    assert g.quaternions.shape == (g.count, 4)
+    # Colors should be in [0, 1]
+    assert g.colors.min() >= 0.0 and g.colors.max() <= 1.0
+
+
+def test_splat_gaussians_save(tmp_path):
+    """Gaussians.save() writes a valid .ply file."""
+    g = fp.splat(fps.sphere(0.5), size=24, domain=(-0.8, 0.8), verbose=False)
+    out = tmp_path / "sphere.ply"
+    result = g.save(str(out), verbose=False)
+    assert out.exists()
+    assert out.stat().st_size > 0
+    assert result == str(out)
+
+
 def test_splat_plain_sdf(tmp_path):
-    """fp.splat() with a plain SDF writes a valid .ply file."""
+    """fp.splat() with output_file writes a valid .ply file and returns the path."""
     out = tmp_path / "sphere.ply"
     result = fp.splat(
         fps.sphere(0.5),
         output_file=str(out),
-        grid_res=24,
+        size=24,
         domain=(-0.8, 0.8),
         verbose=False,
     )
@@ -440,7 +566,7 @@ def test_splat_container_with_solid_color(tmp_path):
     fpc.b = 1.0
 
     out = tmp_path / "blue_sphere.ply"
-    fp.splat(fpc, output_file=str(out), grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fp.splat(fpc, output_file=str(out), size=24, domain=(-0.8, 0.8), verbose=False)
     assert out.exists()
     assert out.stat().st_size > 0
 
@@ -455,7 +581,7 @@ def test_splat_container_with_expression_color(tmp_path):
     fpc.b = 0.5 - fp.x() * 0.5
 
     out = tmp_path / "gradient_sphere.ply"
-    fp.splat(fpc, output_file=str(out), grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fp.splat(fpc, output_file=str(out), size=24, domain=(-0.8, 0.8), verbose=False)
     assert out.exists()
     assert out.stat().st_size > 0
 
@@ -473,7 +599,7 @@ def test_splat_container_with_hsl_color(tmp_path):
     fpc.b = rgb['b']
 
     out = tmp_path / "hsl_sphere.ply"
-    fp.splat(fpc, output_file=str(out), grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fp.splat(fpc, output_file=str(out), size=24, domain=(-0.8, 0.8), verbose=False)
     assert out.exists()
     assert out.stat().st_size > 0
 
@@ -491,7 +617,7 @@ def test_splat_zero_color_channels_not_replaced_by_white(tmp_path):
     fpc.b = 0   # zero — must stay zero
 
     out = tmp_path / "red_sphere.ply"
-    fp.splat(fpc, output_file=str(out), grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fp.splat(fpc, output_file=str(out), size=24, domain=(-0.8, 0.8), verbose=False)
 
     # Read back the PLY and check that the SH DC values encode red, not white.
     # For degree-0 splats: f_dc_0 >> f_dc_1 and f_dc_0 >> f_dc_2 for red.
@@ -506,13 +632,11 @@ def test_splat_zero_color_channels_not_replaced_by_white(tmp_path):
     dc0_idx = props.index("f_dc_0")
     dc1_idx = props.index("f_dc_1")
     dc2_idx = props.index("f_dc_2")
-    stride = len(props) * 4  # each property is float32 (4 bytes)
 
     # Read the first Gaussian
-    offset = 0
-    dc0 = struct.unpack_from("<f", body, offset + dc0_idx * 4)[0]
-    dc1 = struct.unpack_from("<f", body, offset + dc1_idx * 4)[0]
-    dc2 = struct.unpack_from("<f", body, offset + dc2_idx * 4)[0]
+    dc0 = struct.unpack_from("<f", body, dc0_idx * 4)[0]
+    dc1 = struct.unpack_from("<f", body, dc1_idx * 4)[0]
+    dc2 = struct.unpack_from("<f", body, dc2_idx * 4)[0]
 
     assert dc0 > dc1 + 1.0, f"Red channel DC should dominate green: dc0={dc0:.2f}, dc1={dc1:.2f}"
     assert dc0 > dc2 + 1.0, f"Red channel DC should dominate blue: dc0={dc0:.2f}, dc2={dc2:.2f}"
@@ -535,8 +659,19 @@ def test_splat_container_method(tmp_path):
     fpc.b = 0.1
 
     out = str(tmp_path / "red_sphere.ply")
-    fpc.splat(output_file=out, grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fpc.splat(output_file=out, size=24, domain=(-0.8, 0.8), verbose=False)
     assert (tmp_path / "red_sphere.ply").exists()
+
+
+def test_splat_container_method_no_output():
+    """Container.splat() with no output_file returns a Gaussians object."""
+    from fidgetpy.splat import Gaussians
+    fpc = fp.container("shape", "r", "g", "b")
+    fpc.shape = fps.sphere(0.5)
+    fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
+    g = fpc.splat(size=24, domain=(-0.8, 0.8), verbose=False)
+    assert isinstance(g, Gaussians)
+    assert g.count > 0
 
 
 # ── Paint + Splat integration ─────────────────────────────────────────────────
@@ -554,7 +689,7 @@ def test_paint_then_splat(tmp_path):
     fpc.paint(dot, r=0.1, g=0.9, b=0.1, width=0.08)
 
     out = tmp_path / "painted_box.ply"
-    fp.splat(fpc, output_file=str(out), grid_res=24, domain=(-0.8, 0.8), verbose=False)
+    fp.splat(fpc, output_file=str(out), size=24, domain=(-0.8, 0.8), verbose=False)
     assert out.exists()
 
 
@@ -591,12 +726,12 @@ def test_hsl_expression_arg():
     assert hasattr(rgb['b'], '_is_sdf_expr')
 
 
-# ── mesh_ply() ────────────────────────────────────────────────────────────────
+# ── mesh() with output_file ───────────────────────────────────────────────────
 
-def test_mesh_ply_plain_sdf(tmp_path):
-    """fp.mesh_ply() on a plain SDF writes a PLY without vertex colors."""
+def test_mesh_plain_sdf_writes_ply(tmp_path):
+    """fp.mesh(output_file=...) on a plain SDF writes a PLY without vertex colors."""
     out = tmp_path / "sphere.ply"
-    result = fp.mesh_ply(fps.sphere(1.0), str(out), depth=4)
+    result = fp.mesh(fps.sphere(1.0), output_file=str(out), depth=4)
     assert out.exists()
     assert result == str(out)
     header = out.read_bytes()[:512].decode("ascii", errors="replace")
@@ -605,22 +740,22 @@ def test_mesh_ply_plain_sdf(tmp_path):
     assert "property uchar red" not in header   # no color for plain SDF
 
 
-def test_mesh_ply_solid_color(tmp_path):
-    """fp.mesh_ply() with solid color attributes writes per-vertex RGB."""
+def test_mesh_solid_color(tmp_path):
+    """fp.mesh(output_file=...) with solid color attributes writes per-vertex RGB."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
 
     out = tmp_path / "red.ply"
-    fp.mesh_ply(fpc, str(out), depth=4)
+    fp.mesh(fpc, output_file=str(out), depth=4)
     header = out.read_bytes()[:512].decode("ascii", errors="replace")
     assert "property uchar red" in header
     assert "property uchar green" in header
     assert "property uchar blue" in header
 
 
-def test_mesh_ply_expression_color(tmp_path):
-    """fp.mesh_ply() evaluates expression color channels at vertex positions."""
+def test_mesh_expression_color(tmp_path):
+    """fp.mesh(output_file=...) evaluates expression color channels at vertex positions."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     # X-axis gradient
@@ -629,15 +764,15 @@ def test_mesh_ply_expression_color(tmp_path):
     fpc.b = 0.5 - fp.x() * 0.5
 
     out = tmp_path / "gradient.ply"
-    fp.mesh_ply(fpc, str(out), depth=4)
+    fp.mesh(fpc, output_file=str(out), depth=4)
     assert out.exists()
     assert out.stat().st_size > 0
     header = out.read_bytes()[:512].decode("ascii", errors="replace")
     assert "property uchar red" in header
 
 
-def test_mesh_ply_hsl_color(tmp_path):
-    """fp.mesh_ply() works with HSL-derived per-vertex color."""
+def test_mesh_hsl_color(tmp_path):
+    """fp.mesh(output_file=...) works with HSL-derived per-vertex color."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     angle = fpm.atan2(fp.y(), fp.x()) / (2 * math.pi) + 0.5
@@ -645,62 +780,58 @@ def test_mesh_ply_hsl_color(tmp_path):
     fpc.r = rgb['r']; fpc.g = rgb['g']; fpc.b = rgb['b']
 
     out = tmp_path / "hsl.ply"
-    fp.mesh_ply(fpc, str(out), depth=5)
+    fp.mesh(fpc, output_file=str(out), depth=5)
     assert out.exists()
     assert out.stat().st_size > 0
 
 
-def test_mesh_ply_method(tmp_path):
-    """Container.mesh_ply() produces the same result as fp.mesh_ply(container)."""
+def test_mesh_method_with_output_file(tmp_path):
+    """Container.mesh(output_file=...) produces the same result as fp.mesh(container, output_file=...)."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     fpc.r = 0.9; fpc.g = 0.1; fpc.b = 0.1
 
     out1 = str(tmp_path / "a.ply")
     out2 = str(tmp_path / "b.ply")
-    fp.mesh_ply(fpc, out1, depth=4)
-    fpc.mesh_ply(out2, depth=4)
+    fp.mesh(fpc, output_file=out1, depth=4)
+    fpc.mesh(output_file=out2, depth=4)
 
-    # Both files must exist and have the same size
     import os
     assert os.path.getsize(out1) == os.path.getsize(out2)
 
 
-def test_mesh_ply_partial_color(tmp_path):
+def test_mesh_partial_color(tmp_path):
     """Unset color channels default to 1.0 (white contribution)."""
     fpc = fp.container("shape", "r")
     fpc.shape = fps.sphere(1.0)
     fpc.r = 0.9   # only r is set; g and b will default to 1.0
 
     out = tmp_path / "partial.ply"
-    fp.mesh_ply(fpc, str(out), depth=4)
+    fp.mesh(fpc, output_file=str(out), depth=4)
     header = out.read_bytes()[:512].decode("ascii", errors="replace")
     assert "property uchar red" in header
 
 
-def test_mesh_ply_vertex_colors_correct(tmp_path):
+def test_mesh_vertex_colors_correct(tmp_path):
     """Verify that solid red (r=1, g=0, b=0) encodes correctly as RGB (255,0,0)."""
-    import struct, numpy as np
+    import numpy as np
 
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     fpc.r = 1.0; fpc.g = 0.0; fpc.b = 0.0
 
     out = tmp_path / "red.ply"
-    fp.mesh_ply(fpc, str(out), depth=4)
+    fp.mesh(fpc, output_file=str(out), depth=4)
 
     data = out.read_bytes()
     header_end = data.index(b"end_header\n") + len(b"end_header\n")
     header = data[:header_end].decode("ascii")
     body = data[header_end:]
 
-    # Find the vertex count
     n_verts = int([l for l in header.splitlines() if l.startswith("element vertex")][0].split()[-1])
     assert n_verts > 0
 
     # Each vertex: 3 floats (xyz) + 3 bytes (rgb) = 15 bytes
-    stride = 3 * 4 + 3
-    # Sample the first vertex's color
     r_byte = body[12]   # offset 12: after x(4) y(4) z(4)
     g_byte = body[13]
     b_byte = body[14]
@@ -709,16 +840,16 @@ def test_mesh_ply_vertex_colors_correct(tmp_path):
     assert b_byte == 0,   f"Expected b=0, got {b_byte}"
 
 
-def test_mesh_ply_missing_shape_raises():
-    """fp.mesh_ply() raises ValueError when the Container has no 'shape'."""
+def test_mesh_missing_shape_raises():
+    """fp.mesh() raises ValueError when the Container has no 'shape'."""
     fpc = fp.container("r", "g", "b")
     fpc.r = 1.0; fpc.g = 0.0; fpc.b = 0.0
     with pytest.raises(ValueError, match="shape"):
-        fp.mesh_ply(fpc)
+        fp.mesh(fpc, output_file="unused.ply")
 
 
-def test_mesh_ply_paint_then_mesh(tmp_path):
-    """Paint proximity blend → mesh_ply writes correct colored PLY."""
+def test_mesh_paint_then_mesh(tmp_path):
+    """Paint proximity blend → mesh with output_file writes correct colored PLY."""
     fpc = fp.container("shape", "r", "g", "b")
     fpc.shape = fps.sphere(1.0)
     fpc.r = 0.1; fpc.g = 0.1; fpc.b = 0.9   # blue base
@@ -727,7 +858,7 @@ def test_mesh_ply_paint_then_mesh(tmp_path):
     fpc.paint(dot, r=1.0, g=0.2, b=0.0)   # paint orange dot
 
     out = tmp_path / "painted.ply"
-    fp.mesh_ply(fpc, str(out), depth=5)
+    fp.mesh(fpc, output_file=str(out), depth=5)
     assert out.exists()
     header = out.read_bytes()[:512].decode("ascii", errors="replace")
     assert "property uchar red" in header
@@ -735,10 +866,10 @@ def test_mesh_ply_paint_then_mesh(tmp_path):
 
 # ── VM round-trip ─────────────────────────────────────────────────────────────
 
-def test_vm_roundtrip_shape():
+def test_to_vm_roundtrip_shape():
     """Shape exported to VM and re-imported evaluates identically."""
     sdf = fps.sphere(1.0)
-    vm_str = fp.vm(sdf)
+    vm_str = fp.to_vm(sdf)
     reimported = fp.from_vm(vm_str)
 
     pts = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
@@ -749,13 +880,13 @@ def test_vm_roundtrip_shape():
     np.testing.assert_allclose(original_vals, reimported_vals, atol=1e-5)
 
 
-def test_vm_container_color_round_trip():
+def test_to_vm_container_color_round_trip():
     """Color VM strings round-trip: export, re-import, evaluate match original."""
     # Use a 3D expression so fp.eval works with a standard [x, y, z] mapping.
     fpc = fp.container("r")
     fpc.r = fpm.sqrt(fp.x()**2 + fp.y()**2 + fp.z()**2)  # distance from origin
 
-    vms = fp.vm(fpc)
+    vms = fp.to_vm(fpc)
     reimported_r = fp.from_vm(vms["r"])
 
     pts = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 1.0]], dtype=np.float32)

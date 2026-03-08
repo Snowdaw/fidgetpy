@@ -90,13 +90,13 @@ def box_frame(width=1.0, height=1.0, depth=1.0, thickness=0.1):
         raise ValueError("Thickness is too large for the given dimensions")
     
     # Create the outer box
-    outer_box = fp.shape.box_exact(width, height, depth)
+    outer_box = fp.shape.box(width, height, depth)
     
     # Create the inner box (smaller by twice the thickness)
     inner_width = width - 2 * thickness
     inner_height = height - 2 * thickness
     inner_depth = depth - 2 * thickness
-    inner_box = fp.shape.box_exact(inner_width, inner_height, inner_depth)
+    inner_box = fp.shape.box(inner_width, inner_height, inner_depth)
     
     # Subtract the inner box from the outer box
     return fpm.max(outer_box, -inner_box)

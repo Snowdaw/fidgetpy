@@ -6,13 +6,11 @@ mod fp_expr;
 mod fp_utils;
 mod fp_eval;
 mod fp_mesh;
-mod fp_stl;
 mod fp_context;
 
 
 use fp_var::PyVar;
 use fp_expr::PyExpr;
-use crate::fp_mesh::PyMesh;
 
 // Core coordinate functions
 #[pyfunction]
@@ -101,11 +99,6 @@ fn mesh(
     )
 }
 
-#[pyfunction]
-fn save_stl(py: Python, mesh: &PyMesh, filepath: String) -> PyResult<()> {
-    crate::fp_stl::save_stl(py, mesh, filepath)
-}
-
 // Import/Export functions
 #[pyfunction]
 fn from_vm(text: String) -> PyResult<PyExpr> {
@@ -143,7 +136,6 @@ fn fidgetpy(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 2. Evaluation and meshing functions
     m.add_function(wrap_pyfunction!(eval, m)?)?;
     m.add_function(wrap_pyfunction!(mesh, m)?)?;
-    m.add_function(wrap_pyfunction!(save_stl, m)?)?;
 
     // 3. Import/Export functions
     m.add_function(wrap_pyfunction!(from_vm, m)?)?;

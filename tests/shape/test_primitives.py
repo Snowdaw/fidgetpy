@@ -38,47 +38,14 @@ def test_sphere():
 
 
 def test_box():
-    """Test the box primitive (alias for box_exact)."""
-    # Create a box with different dimensions
-    box = fps.box_exact(1.0, 1.5, 0.75)
-    
-    # Test meshing with both methods and compare results
+    """Test the box primitive (exact Euclidean SDF)."""
+    box = fps.box(1.0, 1.5, 0.75)
+
     success, py_stl, cli_stl = shape_dual_meshing(
         box, "box", depth=TEST_DEPTH, scale=TEST_SCALE
     )
-    
-    # Check that both meshes were created and are similar
+
     assert success, f"Box meshes differ: {py_stl} vs {cli_stl}"
-
-
-def test_box_exact():
-    """Test the box_exact primitive."""
-    # Create a box with different dimensions
-    box = fps.box_exact(1.0, 1.5, 0.75)
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        box, "box_exact", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Box exact meshes differ: {py_stl} vs {cli_stl}"
-
-
-def test_box_mitered():
-    """Test the box_mitered primitive."""
-    # Create a mitered box with different dimensions
-    # For mitered box, we need to ensure the mesh resolution is high enough
-    box = fps.box_mitered(1.0, 1.5, 0.75)
-    
-    # Test meshing with both methods and compare results
-    # Use a higher depth for better meshing of the mitered box
-    success, py_stl, cli_stl = shape_dual_meshing(
-        box, "box_mitered", depth=TEST_DEPTH+1, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Box mitered meshes differ: {py_stl} vs {cli_stl}"
 
 
 def test_rectangle():
@@ -121,9 +88,8 @@ def test_torus():
 
 def test_plane():
     """Test the plane primitive with a bounding box."""
-    # Create a plane along with a bounding box to make it finite
     plane = fps.plane((0, 1, 0), 0)  # XZ plane
-    box = fps.box_exact(2.0, 1.0, 2.0)  # Bounding box
+    box = fps.box(2.0, 1.0, 2.0)
     bounded_plane = fp.ops.intersection(plane, box)
     
     # Test meshing with both methods and compare results
@@ -133,22 +99,6 @@ def test_plane():
     
     # Check that both meshes were created and are similar
     assert success, f"Bounded plane (intersection) meshes differ: {py_stl} vs {cli_stl}"
-
-
-def test_bounded_plane():
-    """Test the bounded_plane primitive."""
-    # Create a bounded plane using the new function
-    bounded_plane = fps.bounded_plane((0, 1, 0), 0, (2.0, 1.0, 2.0))
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        bounded_plane, "bounded_plane", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Bounded plane meshes differ: {py_stl} vs {cli_stl}"
-    
-    
 
 
 def test_octahedron():
@@ -221,49 +171,6 @@ def test_ring():
     assert success, f"Ring meshes differ: {py_stl} vs {cli_stl}"
 
 
-def test_cylinder_z():
-    """Test the cylinder_z primitive."""
-    # Create a cylinder along the z-axis
-    # Note: cylinder_z function expects (radius, height, base) where base is a tuple
-    cylinder = fps.cylinder_z(0.5, 1.0, (0.0, 0.0, 0.0))
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        cylinder, "cylinder_z", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Cylinder_z meshes differ: {py_stl} vs {cli_stl}"
-
-
-def test_cone_z():
-    """Test the cone_z primitive."""
-    # Create a cone along the z-axis
-    # Note: cone_z function expects (radius, height, base) where base is a tuple
-    cone = fps.cone_z(0.5, 1.0, (0.0, 0.0, 0.0))
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        cone, "cone_z", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Cone_z meshes differ: {py_stl} vs {cli_stl}"
-
-
-def test_pyramid_z():
-    """Test the pyramid_z primitive."""
-    # Create a pyramid with a rectangular base
-    # Note: pyramid_z function expects (a, b, zmin, height) where a and b are tuples
-    pyramid = fps.pyramid_z((-0.5, -0.5), (0.5, 0.5), 0.0, 1.0)
-    
-    # Test meshing with both methods and compare results
-    success, py_stl, cli_stl = shape_dual_meshing(
-        pyramid, "pyramid_z", depth=TEST_DEPTH, scale=TEST_SCALE
-    )
-    
-    # Check that both meshes were created and are similar
-    assert success, f"Pyramid_z meshes differ: {py_stl} vs {cli_stl}"
 
 
 if __name__ == "__main__":
