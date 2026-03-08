@@ -48,6 +48,8 @@ from .logical import (
     python_and, python_or, logical_if
 )
 
+from .color import hsl
+
 # Define __all__ to control what gets imported with "from fidgetpy.math import *"
 __all__ = [
     # Basic Math Functions
@@ -77,7 +79,10 @@ __all__ = [
     
     # Logical Operations
     'logical_and', 'logical_or', 'logical_not', 'logical_xor',
-    'python_and', 'python_or', 'logical_if'
+    'python_and', 'python_or', 'logical_if',
+
+    # Color
+    'hsl',
 ]
 
 # Clean up any modules that might have been imported

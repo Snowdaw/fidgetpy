@@ -32,6 +32,12 @@ This project uses [`maturin`](https://www.maturin.rs/) to build the Rust extensi
     cd fidgetpy
     maturin develop
     ```
+    **outside venv**:
+    ```bash
+    cd fidgetpy
+    maturin build --interpreter /your/python/interpreter/python
+    /your/python/interpreter/python -m pip install target/wheels/fidgetpy-*.whl --force-reinstall
+    ```
 
 Note that when running the tests with pytest in order for the shape tests to work you need to build Fidget with the fidget-cli demo as it is used for comparing meshes.
 
