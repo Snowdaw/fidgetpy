@@ -44,6 +44,49 @@ fn create_var(name: &str) -> PyResult<PyExpr> {
 
 // Removed constant function to allow seamless use of numbers
 
+/// Evaluate the SDF gradient at an (N, 3) point array.
+///
+/// Uses forward-mode automatic differentiation (GradSliceEval) to compute the
+/// SDF value and its exact partial derivatives in a single pass.
+///
+/// Args:
+///     expr:    A fidgetpy SDF expression.
+///     pts:     (N, 3) float32 numpy array of xyz positions.
+///     backend: "jit" (default) or "vm". Use "vm" on devices where JIT is unavailable.
+///
+/// Returns:
+///     (N, 4) float32 numpy array where columns are [sdf_value, dx, dy, dz].
+#[pyfunction]
+#[pyo3(signature = (expr, pts, backend=None))]
+fn eval_grad(
+    py: Python,
+    expr: PyRef<PyExpr>,
+    pts: numpy::PyReadonlyArray2<f32>,
+    backend: Option<String>,
+) -> PyResult<PyObject> {
+    use numpy::PyArray2;
+    use ndarray::Array2;
+
+    let view = pts.as_array();
+    if view.ndim() != 2 || view.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "pts must be a 2-D array with shape (N, 3)",
+        ));
+    }
+
+    let use_jit = crate::fp_eval::determine_backend(backend)?;
+    let result = if use_jit {
+        crate::fp_eval::_evaluate_grad_jit(&expr.tree, &view)?
+    } else {
+        crate::fp_eval::_evaluate_grad_vm(&expr.tree, &view)?
+    };
+    let n = result.len();
+    let flat: Vec<f32> = result.into_iter().flat_map(|g| g).collect();
+    let arr = Array2::from_shape_vec((n, 4), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyArray2::from_array(py, &arr).into())
+}
+
 // Direct evaluation function
 #[pyfunction]
 #[pyo3(signature = (expr, values, variables=None, backend=None))]
@@ -135,6 +178,7 @@ fn fidgetpy(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     
     // 2. Evaluation and meshing functions
     m.add_function(wrap_pyfunction!(eval, m)?)?;
+    m.add_function(wrap_pyfunction!(eval_grad, m)?)?;
     m.add_function(wrap_pyfunction!(mesh, m)?)?;
 
     // 3. Import/Export functions

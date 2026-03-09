@@ -36,7 +36,7 @@ fp.mesh(scene, output_file="scene.ply", depth=6)
 | `fp` | `x/y/z()`, `var()`, `eval()`, `mesh()`, `splat()`, `to_vm/frep()`, `from_vm/frep()`, `container()` |
 | `fp.shape` (`fps`) | Primitives: `sphere`, `box`, `cylinder`, `torus`, `cone`, `capsule`, … |
 | `fp.ops` (`fpo`) | Boolean and blending ops: `union`, `intersection`, `smooth_union`, `onion`, … |
-| `fp.math` (`fpm`) | Math helpers: `clamp`, `mix`, `sin`, `atan2`, `hsl`, `translate`, `rotate`, … |
+| `fp.math` (`fpm`) | Math helpers: `clamp`, `mix`, `sin`, `atan2`, `hsl`, `translate`, `rotate`, `gradient`, `normal`, `diffuse`, … |
 
 ## Containers — expressions as attributes
 
@@ -84,7 +84,7 @@ g.save("sphere.ply")
 ```
 
 Key parameters for `fp.mesh()`: `depth` (default 4), `bounds_min`/`bounds_max` or `center`/`scale`, `numpy`, `threads`.
-Key parameter for `fp.splat()`: `size` — sampling grid resolution (`size³` points, default 96).
+Key parameters for `fp.splat()`: `size` — sampling grid resolution (`size³` points, default 96); `bounds_min`/`bounds_max` — explicit sampling volume (auto-detected if omitted).
 
 ## VM and F-Rep serialisation
 
@@ -102,6 +102,39 @@ fpc = fp.container(); fpc.shape = sphere; fpc.r = 0.9
 fp.to_vm(fpc, output_file="model.vm")
 
 reimported = fp.from_vm(vm_str)
+```
+
+## Shading
+
+**`fp.math`** — symbolic shading, composes directly with other SDF expressions:
+
+```python
+import fidgetpy.math as fpm
+
+shape = fps.sphere(1.0)
+
+# Surface normal components in [-1, 1] — useful for normal-map visualization
+nx, ny, nz = fpm.normal(shape)
+fpc.r = nx * 0.5 + 0.5
+
+# Lambertian diffuse — returns an SDF expression, free to compose
+light = fpm.diffuse(shape, light_dir=(1, 2, 3))
+fpc.r = 0.8 * light
+```
+
+**`fp.eval_grad`** — exact surface normals and SDF values at explicit points,
+via forward-mode automatic differentiation (one JIT pass):
+
+```python
+import numpy as np
+
+m = fp.mesh(shape, depth=6)
+
+# Returns (N, 4): [sdf_value, dx, dy, dz]
+grad = fp.eval_grad(shape, m.vertices.astype(np.float32))
+normals   = grad[:, 1:]                          # (N, 3) exact normals
+brightness = np.clip(normals @ [0.6, 0.8, 0.0], 0, 1)
+m.save("diffuse.ply", colors=np.stack([brightness]*3, axis=1))
 ```
 
 ## Custom variables

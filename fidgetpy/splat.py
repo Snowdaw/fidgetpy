@@ -49,35 +49,51 @@ def _eval_sdf_at(expr, pts):
     )
 
 
-def _auto_domain(expr, padding=0.15):
+def _auto_domain(expr, padding=0.15, verbose=False):
     """
     Estimate the sampling domain by meshing at low resolution and reading
     the vertex bounding box.  Falls back to (-2, 2) if meshing produces nothing.
+
+    Tries scale=1 first, then scale=2, then scale=4 to catch larger shapes.
     """
     import fidgetpy as fp
-    try:
-        m = fp.mesh(expr, depth=3, numpy=True)
-        verts = m.vertices
-        if len(verts) == 0:
-            return (-2.0, 2.0)
-        lo = float(verts.min()) - padding
-        hi = float(verts.max()) + padding
-        return (lo, hi)
-    except Exception:
-        return (-2.0, 2.0)
+    for scale in (1.0, 2.0, 4.0):
+        try:
+            m = fp.mesh(expr, depth=3, scale=scale, numpy=True)
+            verts = m.vertices
+            if len(verts) == 0:
+                continue
+            lo = float(verts.min()) - padding
+            hi = float(verts.max()) + padding
+            return (lo, hi)
+        except Exception as e:
+            if verbose:
+                print(f"  _auto_domain: mesh at scale={scale} failed: {e}")
+    if verbose:
+        print("  _auto_domain: falling back to (-2, 2)")
+    return (-2.0, 2.0)
 
 
-def _compute_gradient(expr, pts, h=8e-4):
+def _compute_gradient(expr, pts):
     """
-    ∇SDF at each point via 6-tap central finite differences.
-    Returns shape (N, 3). Magnitude ≈ 1 for a true SDF.
+    ∇SDF at each point via GradSliceEval (exact forward-mode AD, single pass).
+    Returns shape (N, 3). Also returns the SDF value as the second element if
+    called as (grad, val) = _compute_gradient_with_val(expr, pts).
     """
-    eps = np.eye(3) * h
-    grad = np.stack([
-        (_eval_sdf_at(expr, pts + eps[i]) - _eval_sdf_at(expr, pts - eps[i])) / (2 * h)
-        for i in range(3)
-    ], axis=-1)
-    return grad
+    import fidgetpy as fp
+    result = fp.eval_grad(expr, np.asarray(pts, dtype=np.float32))
+    return np.asarray(result[:, 1:], dtype=np.float64)
+
+
+def _compute_gradient_and_val(expr, pts):
+    """
+    Returns (sdf_values (N,), gradient (N, 3)) in one GradSliceEval pass.
+    Replaces separate _eval_sdf_at + _compute_gradient calls.
+    """
+    import fidgetpy as fp
+    result = fp.eval_grad(expr, np.asarray(pts, dtype=np.float32))
+    return (np.asarray(result[:, 0], dtype=np.float64),
+            np.asarray(result[:, 1:], dtype=np.float64))
 
 
 def _compute_hessian(expr, pts, h=1.5e-3):
@@ -344,18 +360,43 @@ class Gaussians:
     def count(self):
         return len(self.positions)
 
-    def save(self, path, verbose=True):
+    def save(self, path, colors=None, verbose=True):
         """
         Write a 3DGS-compatible binary PLY file.
 
         Args:
             path:    Output file path.
+            colors:  (N, 3) float array in [0, 1] to override the stored RGB
+                     colors, or None to use the colors set at splat time.
             verbose: Print a summary line. Default True.
 
         Returns:
             str: The path that was written.
+
+        Example::
+
+            import fidgetpy as fp, numpy as np
+            g = fp.splat(shape)
+            grad = fp.eval_grad(shape, g.positions.astype(np.float32))
+            brightness = np.clip((grad[:, 1:] * [0.6, 0.8, 0.0]).sum(axis=1), 0, 1)
+            g.save("out.ply", colors=np.stack([brightness]*3, axis=1))
         """
-        _write_ply(path, self._raw, verbose=verbose)
+        import math as _math
+        raw = self._raw
+        if colors is not None:
+            colors = np.asarray(colors, dtype=np.float64)
+            if colors.shape != (self.count, 3):
+                raise ValueError(
+                    f"colors must have shape ({self.count}, 3), got {colors.shape}"
+                )
+            # Recover SH degree from stored sh_rest shape
+            n_rest = raw['sh_rest'].shape[1] if raw['sh_rest'].size else 0
+            sh_degree = round(_math.sqrt(n_rest // 3 + 1)) - 1
+            sh_all = _build_sh_features(colors, self.normals, sh_degree)
+            raw = dict(raw)
+            raw['sh_dc'] = sh_all[:, :3]
+            raw['sh_rest'] = sh_all[:, 3:] if sh_degree > 0 else np.zeros((self.count, 0))
+        _write_ply(path, raw, verbose=verbose)
         return path
 
     def __repr__(self):
@@ -395,6 +436,9 @@ def _resolve_color(color, pts, N):
     for i, c in enumerate(color):
         if isinstance(c, (int, float)):
             out[:, i] = np.clip(float(c), 0.0, 1.0)
+        elif callable(c):
+            # _CallableExpr or any callable returning (N,) array
+            out[:, i] = np.clip(c(pts), 0.0, 1.0)
         else:
             # Assume fidgetpy expression — evaluate at surface points
             out[:, i] = np.clip(_eval_sdf_at(c, pts), 0.0, 1.0)
@@ -410,7 +454,6 @@ def splat(
     surface_thresh=0.02,
     max_gaussians=None,
     sh_degree=0,
-    h_grad=8e-4,
     h_hess=1.5e-3,
     scale_min=5e-5,
     scale_max=0.02,
@@ -459,7 +502,6 @@ def splat(
         max_gaussians:  Cap on number of output Gaussians (random subsample).
                         None means no cap. Default: None.
         sh_degree:      Spherical harmonics degree 0–3. Default: 0 (color only).
-        h_grad:         Finite-difference step for gradient computation.
         h_hess:         Finite-difference step for Hessian computation.
         scale_min:      Minimum Gaussian scale (log-space clamping). Default: 5e-5.
         scale_max:      Maximum Gaussian scale. Default: 0.02.
@@ -491,7 +533,7 @@ def splat(
     if domain is None:
         if verbose:
             print("  Auto-detecting domain from low-res mesh...")
-        domain = _auto_domain(expr)
+        domain = _auto_domain(expr, verbose=verbose)
         if verbose:
             print(f"  Domain: {domain[0]:.3f} → {domain[1]:.3f}")
 
@@ -535,8 +577,7 @@ def splat(
         print("  Projecting candidates onto zero-level set (Newton refinement)...")
     pts_start = pts_surf.copy()
     for _ in range(5):
-        d_cur = _eval_sdf_at(expr, pts_surf)
-        grad_cur = _compute_gradient(expr, pts_surf, h=h_grad)
+        d_cur, grad_cur = _compute_gradient_and_val(expr, pts_surf)
         grad_mag = np.linalg.norm(grad_cur, axis=-1, keepdims=True)
         n_cur = grad_cur / (grad_mag + 1e-12)
         pts_surf = pts_surf - d_cur[:, np.newaxis] * n_cur
@@ -569,7 +610,7 @@ def splat(
     if verbose:
         print("\n[3/5] Computing normals and surface colors...")
     t0 = time.time()
-    grad = _compute_gradient(expr, pts_surf, h=h_grad)
+    grad = _compute_gradient(expr, pts_surf)
     grad_mag = np.linalg.norm(grad, axis=-1, keepdims=True)
     normals = grad / (grad_mag + 1e-12)
 

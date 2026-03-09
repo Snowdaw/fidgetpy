@@ -50,6 +50,8 @@ from .logical import (
 
 from .color import hsl
 
+from .shading import gradient, normal, diffuse
+
 # Define __all__ to control what gets imported with "from fidgetpy.math import *"
 __all__ = [
     # Basic Math Functions
@@ -83,14 +85,17 @@ __all__ = [
 
     # Color
     'hsl',
+
+    # Shading (symbolic SDF operations)
+    'gradient', 'normal', 'diffuse',
 ]
 
 # Clean up any modules that might have been imported
 import sys as _sys
 for _module in ['basic_math', 'trigonometry', 'vector_math', 'vector_math_improved',
-                'transformations', 'domain_manipulation', 'domain_manipulation_improved', 
+                'transformations', 'domain_manipulation', 'domain_manipulation_improved',
                 'interpolation', 'interpolation_improved',
-                'logical', 'builtins', 'py_math', 'fp']:
+                'logical', 'shading', 'builtins', 'py_math', 'fp']:
     if _module in globals():
         globals().pop(_module)
     if f"fidgetpy.math.{_module}" in _sys.modules:

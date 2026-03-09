@@ -13,8 +13,9 @@ use fidget::{
     context::TreeOp,
     shape::{EzShape, Shape, ShapeBulkEval, ShapeVars},
 };
-use fidget::jit::{JitFloatSliceEval, JitFunction};
-use fidget::vm::{VmFloatSliceEval, VmFunction};
+use fidget::jit::{JitFloatSliceEval, JitGradSliceEval, JitFunction};
+use fidget::vm::{VmFloatSliceEval, VmGradSliceEval, VmFunction};
+use fidget::types::Grad;
 
 use crate::fp_utils::parse_variable_list;
 use crate::fp_utils::get_required_var_names_from_vm;
@@ -232,6 +233,61 @@ pub(crate) fn _evaluate_bulk_vm(
         .map_err(|e| PyValueError::new_err(format!("VM evaluation error: {}", e)))?;
 
     Ok(result.to_vec())
+}
+
+/// Build the properly-seeded Grad input vectors for forward-mode AD.
+/// x gets seed (1,0,0), y gets (0,1,0), z gets (0,0,1) so one pass yields
+/// all three partial derivatives simultaneously.
+fn _make_grad_inputs(pts: &ArrayView2<'_, f32>) -> (Vec<Grad>, Vec<Grad>, Vec<Grad>) {
+    let n = pts.shape()[0];
+    let x_grads = (0..n).map(|i| Grad::new(unsafe { *pts.uget([i, 0]) }, 1.0, 0.0, 0.0)).collect();
+    let y_grads = (0..n).map(|i| Grad::new(unsafe { *pts.uget([i, 1]) }, 0.0, 1.0, 0.0)).collect();
+    let z_grads = (0..n).map(|i| Grad::new(unsafe { *pts.uget([i, 2]) }, 0.0, 0.0, 1.0)).collect();
+    (x_grads, y_grads, z_grads)
+}
+
+fn _grads_to_vec(grads: &[Grad]) -> Vec<[f32; 4]> {
+    grads.iter().map(|g| [g.v, g.dx, g.dy, g.dz]).collect()
+}
+
+/// Evaluate the SDF gradient at (N, 3) points using the JIT backend.
+/// Returns (N, 4): [sdf_value, dx, dy, dz] per point.
+pub(crate) fn _evaluate_grad_jit(
+    tree: &Tree,
+    pts: &ArrayView2<'_, f32>,
+) -> PyResult<Vec<[f32; 4]>> {
+    if pts.shape()[1] != 3 {
+        return Err(PyValueError::new_err("pts must have shape (N, 3)"));
+    }
+    let (x_grads, y_grads, z_grads) = _make_grad_inputs(pts);
+    let shape: Shape<JitFunction> = Shape::from(tree.clone());
+    let tape = shape.ez_grad_slice_tape();
+    let shape_vars: ShapeVars<&[Grad]> = ShapeVars::new();
+    let mut eval: ShapeBulkEval<JitGradSliceEval> = ShapeBulkEval::default();
+    let result: &[Grad] = eval
+        .eval_vs(&tape, &x_grads, &y_grads, &z_grads, &shape_vars)
+        .map_err(|e| PyValueError::new_err(format!("Gradient eval error (JIT): {}", e)))?;
+    Ok(_grads_to_vec(result))
+}
+
+/// Evaluate the SDF gradient at (N, 3) points using the VM backend.
+/// Returns (N, 4): [sdf_value, dx, dy, dz] per point.
+pub(crate) fn _evaluate_grad_vm(
+    tree: &Tree,
+    pts: &ArrayView2<'_, f32>,
+) -> PyResult<Vec<[f32; 4]>> {
+    if pts.shape()[1] != 3 {
+        return Err(PyValueError::new_err("pts must have shape (N, 3)"));
+    }
+    let (x_grads, y_grads, z_grads) = _make_grad_inputs(pts);
+    let shape: Shape<VmFunction> = Shape::from(tree.clone());
+    let tape = shape.ez_grad_slice_tape();
+    let shape_vars: ShapeVars<&[Grad]> = ShapeVars::new();
+    let mut eval: ShapeBulkEval<VmGradSliceEval<255>> = ShapeBulkEval::default();
+    let result: &[Grad] = eval
+        .eval_vs(&tape, &x_grads, &y_grads, &z_grads, &shape_vars)
+        .map_err(|e| PyValueError::new_err(format!("Gradient eval error (VM): {}", e)))?;
+    Ok(_grads_to_vec(result))
 }
 
 /// Implementation of the eval method for PyExpr

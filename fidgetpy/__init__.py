@@ -24,7 +24,7 @@ Core functions:
 Submodules:
 - shape: Common shape primitives (sphere, box, cylinder, etc.)
 - ops: Operations for combining shapes (smooth_union, etc.)
-- math: Math operations and transformations
+- math: Math operations, transforms, and symbolic shading (gradient, normal, diffuse)
 """
 
 # Import core functions from the Rust module
@@ -33,7 +33,7 @@ from fidgetpy.fidgetpy import (
     x, y, z, var,
 
     # Evaluation and meshing
-    eval as _eval_rust, mesh as _mesh_rust,
+    eval as _eval_rust, eval_grad, mesh as _mesh_rust,
 
     # Import/Export
     from_vm, to_vm as _to_vm_rust, from_frep, to_frep as _to_frep_rust,
@@ -71,21 +71,37 @@ class Mesh:
     def triangles(self):
         return self._mesh.triangles
 
-    def save(self, path, verbose=True):
+    def save(self, path, colors=None, verbose=True):
         """
         Write a binary PLY file.
 
         Args:
             path:    Output file path.
+            colors:  (N, 3) float array in [0, 1] for per-vertex RGB, or None.
             verbose: Print a summary line. Default True.
 
         Returns:
             str: The path that was written.
+
+        Example::
+
+            import numpy as np
+            normals = fp.eval_grad(shape, m.vertices)[:, 1:]  # (N, 3)
+            brightness = np.clip(normals @ [0.6, 0.8, 0.0], 0, 1)
+            m.save("out.ply", colors=np.stack([brightness]*3, axis=1))
         """
         import numpy as np
         verts = np.asarray(self._mesh.vertices, dtype=np.float32)
         tris  = np.asarray(self._mesh.triangles, dtype=np.int32)
-        _write_mesh_ply(path, verts, tris, colors_u8=None, verbose=verbose)
+        colors_u8 = None
+        if colors is not None:
+            colors = np.asarray(colors, dtype=np.float64)
+            if colors.shape != (len(verts), 3):
+                raise ValueError(
+                    f"colors must have shape ({len(verts)}, 3), got {colors.shape}"
+                )
+            colors_u8 = (np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+        _write_mesh_ply(path, verts, tris, colors_u8=colors_u8, verbose=verbose)
         return path
 
     def __repr__(self):
@@ -351,7 +367,8 @@ def mesh(expr_or_container, output_file=None, verbose=True, **kwargs):
     return output_file
 
 
-def splat(expr_or_container, output_file=None, color=None, verbose=False, **kwargs):
+def splat(expr_or_container, output_file=None, color=None, size=96,
+          bounds_min=None, bounds_max=None, verbose=False, **kwargs):
     """
     Convert a fidgetpy SDF expression or Container to a Gaussian Splatting representation.
 
@@ -368,8 +385,13 @@ def splat(expr_or_container, output_file=None, color=None, verbose=False, **kwar
         output_file:       Path to the output .ply file, or None to return a
                            Gaussians object. Default: None.
         color:             Color override. See fp.splat module for accepted forms.
+        size:              Sampling grid resolution (size³ points). Default: 96.
+        bounds_min:        [x, y, z] minimum corner of the sampling volume.
+                           If provided, bounds_max must also be given and the
+                           automatic domain estimation is skipped.
+        bounds_max:        [x, y, z] maximum corner of the sampling volume.
         verbose:           Print progress information. Default False.
-        **kwargs:          Passed to the underlying splat function (size, domain, …).
+        **kwargs:          Passed to the underlying splat function.
 
     Returns:
         Gaussians: when output_file is None.
@@ -379,13 +401,16 @@ def splat(expr_or_container, output_file=None, color=None, verbose=False, **kwar
         import fidgetpy as fp
         import fidgetpy.shape as fps
 
-        # Return Gaussians for inspection
+        # Return Gaussians for inspection (auto-detects bounds)
         g = fp.splat(fps.sphere(1.0))
         print(g.count, g.positions.shape)
         g.save("sphere.ply")
 
         # Write directly
         fp.splat(fps.sphere(1.0), output_file="sphere.ply")
+
+        # Explicit bounds (useful when auto-detection fails or for large shapes)
+        fp.splat(fps.sphere(3.0), bounds_min=[-4, -4, -4], bounds_max=[4, 4, 4])
 
         # Container with color attributes
         fpc = fp.container()
@@ -411,10 +436,20 @@ def splat(expr_or_container, output_file=None, color=None, verbose=False, **kwar
             )
         expr_or_container = shape_attr
 
+    # Convert bounds_min/bounds_max to the internal domain=(lo, hi) scalar
+    if bounds_min is not None or bounds_max is not None:
+        if bounds_min is None or bounds_max is None:
+            raise ValueError("Both bounds_min and bounds_max must be provided together.")
+        import numpy as np
+        lo = float(np.min(bounds_min))
+        hi = float(np.max(bounds_max))
+        kwargs['domain'] = (lo, hi)
+
     result = _splat_module.splat(
         expr_or_container,
         output_file=None,   # always collect Gaussians first
         color=color,
+        size=size,
         verbose=verbose,    # controls computation progress only
         **kwargs,
     )
